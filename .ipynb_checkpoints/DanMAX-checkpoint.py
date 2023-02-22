@@ -315,7 +315,7 @@ def sampleDisplacementCorrection(tth,sdd,d):
     return corr
 
 
-def integrate_file(fname, config,embed_meta_data=False):
+def integrateFile(fname, config,embed_meta_data=False):
     """
     DanMAX integration function
     Uses the python implementation of MATFRAIA to azimuthally integrate a /raw/SAMPLE/_pilatus.h5 file
