@@ -165,6 +165,8 @@ def getScanType(fname):
     with h5py.File(fname,'r') as f:
         try:
             scan_type = f['entry/title/'][()].decode()
+            # clean up special characters
+            scan_type = scan_type.replace('(',' ').replace(')',' ').strip("'").replace(',','')
             #print(scan_type)
             return scan_type
         except KeyError:
