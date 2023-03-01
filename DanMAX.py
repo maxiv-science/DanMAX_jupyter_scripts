@@ -165,6 +165,8 @@ def getScanType(fname):
     with h5py.File(fname,'r') as f:
         try:
             scan_type = f['entry/title/'][()].decode()
+            # clean up special characters
+            scan_type = scan_type.replace('(',' ').replace(')',' ').strip("'").replace(',','')
             #print(scan_type)
             return scan_type
         except KeyError:
@@ -315,7 +317,7 @@ def sampleDisplacementCorrection(tth,sdd,d):
     return corr
 
 
-def integrate_file(fname, config,embed_meta_data=False):
+def integrateFile(fname, config,embed_meta_data=False):
     """
     DanMAX integration function
     Uses the python implementation of MATFRAIA to azimuthally integrate a /raw/SAMPLE/_pilatus.h5 file
@@ -426,4 +428,27 @@ def integrate_file(fname, config,embed_meta_data=False):
                     sigma_dset[i] = sigma
         progress.value = i+1
 
+def getMotorSteps(fname):
+    """
+    Return motor name(s), nominal positions, and registred (unique) positions for a given scan.
+        Return list of lists [[motor_name_1,nominal,registred], ...]
+    """
     
+    dic = getMetaDic(fname)
+    scan_type = getScanType(fname).lower().split()
+    motors = [s for s in scan_type if s.islower()][1:]
+    motor_steps = []
+    for motor in motors:
+        # get the nominal motor position from the macro title
+        start, stop, steps = [scan_type[i+1:i+4] for i,s in enumerate(scan_type) if motor in s][0]
+        nominal_pos = np.linspace(float(start),float(stop),int(steps)+1)
+        # get the logged motor position
+        motor_entry_id = [key for key in dic.keys() if motor in key][0]
+        motor_pos = dic[motor_entry_id]
+        motor_pos = np.unique(motor_pos)
+        # compare nominal and actual motor positions
+        if not np.all(nominal_pos == motor_pos):
+            print(f'The nominal and registred motor positions for {motor} do not match!')
+        motor_steps.append([motor,nominal_pos,motor_pos])
+    
+    return motor_steps
