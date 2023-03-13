@@ -4,11 +4,55 @@ import glob
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.optimize as sci_op
+import scipy.constants as sci_const
 from azint import AzimuthalIntegrator
 import ipywidgets as ipyw
 import IPython
 import fabio
 
+def keV2A(E):
+    """Convert keV to Angstrom"""
+    try:
+        h = sci_const.physical_constants['Planck constant in eV/Hz'][0]
+        lambd = h*sci_const.c/(E*10**3)*10**10
+    except ZeroDivisionError:
+        lambd = np.full(E.shape,0.0)
+    return lambd
+
+def A2keV(lambd):
+    """Convert Angstrom to keV"""
+    try:
+        h = sci_const.physical_constants['Planck constant in eV/Hz'][0]
+        E = h*sci_const.c/(lambd*10**3)*10**10*10**-3
+    except ZeroDivisionError:
+        E = np.full(lambd.shape,0.0)
+    return E
+
+def tth2Q(tth,E):
+    """Convert 2theta to Q. Provide the energy E in keV"""
+    try:
+        if len(E)>1:
+            E = np.mean(E)
+            print(f'More than one energy provided. Using average: {E:.3f} keV')
+    except TypeError:
+        pass
+    try:
+        return 4*np.pi*np.sin(tth/2*np.pi/180)/keV2A(E)
+    except ZeroDivisionError:
+        return np.full(tth.shape,0.0)
+    
+def Q2tth(Q,E):
+    """Convert Q to 2theta. Provide the energy E in keV"""
+    try:
+        if len(E)>1:
+            E = np.mean(E)
+            print(f'More than one energy provided. Using average: {E:.3f} keV')
+    except TypeError:
+        pass
+    try:
+        return 2*np.arcsin(Q*keV2A(E)/(4*np.pi))*180/np.pi
+    except ZeroDivisionError:
+        return np.full(Q.shape,0.0)
 
 def getCurrentProposal():
     """Return current proposal number and visit number"""
@@ -28,7 +72,7 @@ def getLatestScan(scan_type='any',proposal='',visit='',require_integrated=False)
     if not proposal or not visit:
         proposal, visit = getCurrentProposal()
         #print(proposal, visit)
-    files = sorted(glob.glob(f'/data/visitors/danmax/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.basename, reverse=True)
+    files = sorted(glob.glob(f'/data/visitors/danmax/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.getctime, reverse=True)
 
     for file in files:
         if not 'pilatus.h5' in file and not '_falconx.h5' in file:
