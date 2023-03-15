@@ -340,8 +340,8 @@ def singlePeakFit(x,y):
         convergence = False
         popt = [None]*4
 
-    amp,pos,sig,bgr = popt
-    fwhm = 2*np.sqrt(2*np.log(2))*sig
+    amp,pos,fwhm,bgr = popt
+    sigma = fwhm/(2*np.sqrt(2*np.log(2)))
     y_calc = gauss(x,amp,pos,fwhm,bgr)
     
     return amp,pos,fwhm,bgr,y_calc
