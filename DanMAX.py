@@ -8,6 +8,7 @@ import scipy.constants as sci_const
 from azint import AzimuthalIntegrator
 import ipywidgets as ipyw
 import IPython
+import Ipython.utils
 import fabio
 
 def keV2A(E):
@@ -496,7 +497,11 @@ def getMotorSteps(fname):
         motor_steps.append([motor,nominal_pos,motor_pos])
     
     return motor_steps
-def makeMap(x, y, signal):
+
+def makeMap(x, y, actualXsteps, nominalYsteps, signal):
+    """
+    Return a map 
+    """
     xmin, xmax = np.amin(x), np.amax(x)
     ymin, ymax = np.amin(y), np.amax(y)
     xi = np.linspace(xmin, xmax, 2*actualXsteps)
@@ -505,3 +510,75 @@ def makeMap(x, y, signal):
     ZI = griddata((x.reshape(-1), y.reshape(-1)), signal.reshape(-1), (XI, YI), 'nearest')
     return ZI
 
+def stitchScans(scans, XRF = True, XRD = True):
+    "Returns stitched maps of scans
+
+    scans: list of scans that needs to be stitched
+    XRF: import XRF data (default True)
+    XRF: import XRD data (default True)
+    """
+    for i,scan in enumerate(scans):
+        print(f'scan-{scan} - {i+1} of {len(scans)}',end='\r')
+        # print statements are suppressed within the following context
+        with io.capture_output() as captured:
+            fname = DM.findScan(int(scan))
+            # import falcon x data
+            
+            with h5py.File(fname,'r') as f:
+                S = f['/entry/instrument/falconx/data'][:]
+        
+            S = S[:,energy<Emax*1.1]
+            # import azimuthally integrated data
+            aname = DM.getAzintFname(fname)
+            with h5py.File(aname,'r') as f:
+                try:
+                    x_xrd = f['q'][:]
+                    Q = True
+                except KeyError:
+                    x_xrd = f['2th'][:]
+                    Q = False
+                #I += np.mean(f['I'][:],axis=0)
+                I = f['I'][:]
+            # import meta data and normalize to I0
+            meta = DM.getMetaData(fname)
+            I0 = meta['I0']
+            # normalize
+            I = (I.T/I0).T.astype(np.uint32)
+            S = (S.T/I0).T.astype(np.uint32)
+            x_xrd = x_xrd[I[0,:]>0]
+            I = I[:,I[0,:]>0]
+
+            # get the motor names, nominal and registred positions
+            M1, M2 = DM.getMotorSteps(fname) # Return list of lists [[motor_name_1,nominal,registred], ...]
+            y = M1[2] # registered motor position for the fast motor
+            x = M2[2] # registered motor position for the slow motor
+            if len(M2[1]) != len(M2[2]): # if the length of nominal and registered positions do not match
+                x = np.repeat(x,len(y)/(len(x)))
+
+        # get the shape of the map from the nominal positions
+        map_shape = (len(M2[1])-1,len(M1[1])-1)
+        # reshape x and y grids to the map dimensions
+        xx_new = x.reshape(map_shape) 
+        yy_new = y.reshape(map_shape)
+        SS_new = S.reshape((map_shape[0],map_shape[1],S.shape[-1]))
+        II_new = I.reshape((map_shape[0],map_shape[1],I.shape[-1]))
+        if i<1:
+            xx = xx_new
+            yy = yy_new
+            SS = SS_new
+            II = II_new
+            # get the number of overlapping indices
+            step_size = np.mean(np.diff(xx,axis=0))
+        else:
+            overlap = round(np.mean(xx[-1,:]-xx_new[0,:])/step_size)+1
+            # set the overlapping indices to the mean 
+            xx[-overlap:,:] = xx[-overlap:,:]   #(xx[-overlap:,:]+xx_new[:overlap,:])/2
+            yy[-overlap:,:] = yy[-overlap:,:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
+            SS[-overlap:,:] = SS[-overlap:,:,:] #(SS[-overlap:,:,:]+SS_new[:overlap,:,:])/2
+            II[-overlap:,:] = II[-overlap:,:,:]
+            # append the new values
+            xx = np.append(xx,xx_new[overlap:,:],axis=0)
+            yy = np.append(yy,yy_new[overlap:,:],axis=0)
+            SS = np.append(SS,SS_new[overlap:,:,:],axis=0)
+            II = np.append(II,II_new[overlap:,:,:],axis=0)
+    return xx,yy,SS,II
