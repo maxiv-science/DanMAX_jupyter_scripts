@@ -496,3 +496,12 @@ def getMotorSteps(fname):
         motor_steps.append([motor,nominal_pos,motor_pos])
     
     return motor_steps
+def makeMap(x, y, signal):
+    xmin, xmax = np.amin(x), np.amax(x)
+    ymin, ymax = np.amin(y), np.amax(y)
+    xi = np.linspace(xmin, xmax, 2*actualXsteps)
+    yi = np.linspace(ymin, ymax, 2*nominalYsteps)
+    XI, YI = np.meshgrid(xi, yi)
+    ZI = griddata((x.reshape(-1), y.reshape(-1)), signal.reshape(-1), (XI, YI), 'nearest')
+    return ZI
+
