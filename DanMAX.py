@@ -8,7 +8,7 @@ import scipy.constants as sci_const
 from azint import AzimuthalIntegrator
 import ipywidgets as ipyw
 import IPython
-from Ipython.utils import io
+from IPython.utils import io
 import fabio
 
 def keV2A(E):
@@ -480,11 +480,13 @@ def getMotorSteps(fname):
     """
     
     dic = getMetaDic(fname)
-    scan_type = getScanType(fname).lower().split()
-    motors = [s for s in scan_type if s.islower()][1:]
+    scan_type = getScanType(fname).split()
+    motors = [s for s in scan_type if s.lower().islower()][1:]
+    motors = [m for m in motors if not 'false' in m.lower() and not 'true' in m.lower()]
     motor_steps = []
     for motor in motors:
         # get the nominal motor position from the macro title
+        print(motor)
         start, stop, steps = [scan_type[i+1:i+4] for i,s in enumerate(scan_type) if motor in s][0]
         nominal_pos = np.linspace(float(start),float(stop),int(steps)+1)
         # get the logged motor position
@@ -511,7 +513,7 @@ def makeMap(x, y, actualXsteps, nominalYsteps, signal):
     return ZI
 
 def stitchScans(scans, XRF = True, XRD = True, testfolder = ''):
-    "Returns stitched maps of scans
+    """Returns stitched maps of scans
 
     scans: list of scans that needs to be stitched
     XRF: import XRF data (default True)
@@ -528,6 +530,7 @@ def stitchScans(scans, XRF = True, XRD = True, testfolder = ''):
             fname = findScan(int(scans[0]))
         else:
             fname = os.path.join(testfolder,f'scan-{scans[0]:04d}.h5')
+            print(fname)
 
 
         with h5py.File(fname,'r') as f:
@@ -538,45 +541,53 @@ def stitchScans(scans, XRF = True, XRD = True, testfolder = ''):
     for i,scan in enumerate(scans):
         print(f'scan-{scan} - {i+1} of {len(scans)}',end='\r')
         # print statements are suppressed within the following context
-        with io.capture_output() as captured:
-            fname = findScan(int(scan))
-            # import falcon x data
-            if XRF:        
-                with h5py.File(fname,'r') as f:
-                    S = f['/entry/instrument/falconx/data'][:]
+        #with io.capture_output() as captured:
+        if not testfolder:
+            fname = findScan(int(scans))
+        else:
+            fname = os.path.join(testfolder,f'scan-{scans[0]:04d}.h5')
+            print(fname)
+        # import falcon x data
+        if XRF:        
+            with h5py.File(fname,'r') as f:
+                S = f['/entry/instrument/falconx/data'][:]
         
-                S = S[:,energy<Emax*1.1]
-            if XRD:
-                # import azimuthally integrated data
-                aname = getAzintFname(fname)
-                with h5py.File(aname,'r') as f:
-                    try:
-                        x_xrd = f['q'][:]
-                        Q = True
-                    except KeyError:
-                        x_xrd = f['2th'][:]
-                        Q = False
-                    #I += np.mean(f['I'][:],axis=0)
-                    I = f['I'][:]
-            # import meta data and normalize to I0
-            meta = getMetaData(fname)
-            I0 = meta['I0']
-            # normalize
-            
-            if XRF:
-                S = (S.T/I0).T.astype(np.uint32)
-            if XRD:
-                I = (I.T/I0).T.astype(np.uint32)
-                x_xrd = x_xrd[I[0,:]>0]
-                I = I[:,I[0,:]>0]
+            S = S[:,energy<Emax*1.1]
+        if XRD:
+            # import azimuthally integrated data
+            aname = getAzintFname(fname)
+            with h5py.File(aname,'r') as f:
+                try:
+                    x_xrd = f['q'][:]
+                    Q = True
+                except KeyError:
+                    x_xrd = f['2th'][:]
+                    Q = False
+                #I += np.mean(f['I'][:],axis=0)
+                I = f['I'][:]
+        # import meta data and normalize to I0
+        meta = getMetaData(fname)
+        I0 = meta['I0']
+        # normalize
 
-            # get the motor names, nominal and registred positions
-            M1, M2 = getMotorSteps(fname) # Return list of lists [[motor_name_1,nominal,registred], ...]
-            y = M1[2] # registered motor position for the fast motor
-            x = M2[2] # registered motor position for the slow motor
-            if len(M2[1]) != len(M2[2]): # if the length of nominal and registered positions do not match
-                x = np.repeat(x,len(y)/(len(x)))
+        if I0 == None:
+            I0 = 1
+        
+        if XRF:
+            S = (S.T/I0).T.astype(np.uint32)
+        if XRD:
+            I = (I.T/I0).T.astype(np.uint32)
+            x_xrd = x_xrd[I[0,:]>0]
+            I = I[:,I[0,:]>0]
 
+        # get the motor names, nominal and registred positions
+        M1, M2 = getMotorSteps(fname) # Return list of lists [[motor_name_1,nominal,registred], ...]
+        y = M1[1] # registered motor position for the fast motor
+        x = M2[1] # registered motor position for the slow motor
+        if len(M2[1]) != len(M2[2]): # if the length of nominal and registered positions do not match
+            x = np.repeat(x,len(y)/(len(x)))
+
+        print(f'x shape: {np.shape(x)}\ny shape: {np.shape(y)}')
         # get the shape of the map from the nominal positions
         map_shape = (len(M2[1])-1,len(M1[1])-1)
         # reshape x and y grids to the map dimensions
