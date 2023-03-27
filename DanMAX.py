@@ -510,12 +510,13 @@ def makeMap(x, y, actualXsteps, nominalYsteps, signal):
     ZI = griddata((x.reshape(-1), y.reshape(-1)), signal.reshape(-1), (XI, YI), 'nearest')
     return ZI
 
-def stitchScans(scans, XRF = True, XRD = True):
+def stitchScans(scans, XRF = True, XRD = True, testfolder = ''):
     "Returns stitched maps of scans
 
     scans: list of scans that needs to be stitched
     XRF: import XRF data (default True)
     XRF: import XRD data (default True)
+    test_folder: path to a folder with data, used for testing
     """
 
     if not XRF and not XRD:
@@ -523,7 +524,12 @@ def stitchScans(scans, XRF = True, XRD = True):
 
     if XRF:
         # import falcon x data
-        fname = findScan(int(scans[0]))
+        if not testfolder:
+            fname = findScan(int(scans[0]))
+        else:
+            fname = os.path.join(testfolder,f'scan-{scans[0]:04d}.h5')
+
+
         with h5py.File(fname,'r') as f:
             Emax = f['/entry/instrument/pilatus/energy'][()]*10**-3 # keV
             # Energy calibration (Conversion of chanels to energy)      
