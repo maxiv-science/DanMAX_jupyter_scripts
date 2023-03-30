@@ -541,90 +541,89 @@ def stitchScans(scans, XRF = True, XRD = True, testfolder = ''):
     for i,scan in enumerate(scans):
         print(f'scan-{scan} - {i+1} of {len(scans)}',end='\r')
         # print statements are suppressed within the following context
-        #with io.capture_output() as captured:
-        if not testfolder:
-            fname = findScan(int(scans))
-        else:
-            fname = os.path.join(testfolder,f'scan-{scans[0]:04d}.h5')
-            print(fname)
-        # import falcon x data
-        if XRF:        
-            with h5py.File(fname,'r') as f:
-                S = f['/entry/instrument/falconx/data'][:]
-        
-            S = S[:,energy<Emax*1.1]
-        if XRD:
-            # import azimuthally integrated data
-            aname = getAzintFname(fname)
-            with h5py.File(aname,'r') as f:
-                try:
-                    x_xrd = f['q'][:]
-                    Q = True
-                except KeyError:
-                    x_xrd = f['2th'][:]
-                    Q = False
-                #I += np.mean(f['I'][:],axis=0)
-                I = f['I'][:]
-        # import meta data and normalize to I0
-        meta = getMetaData(fname)
-        I0 = meta['I0']
-        # normalize
+        with io.capture_output() as captured:
+            if not testfolder:
+                fname = findScan(int(scans))
+            else:
+                fname = os.path.join(testfolder,f'scan-{scans[0]:04d}.h5')
+                print(fname)
+            # import falcon x data
+            if XRF:        
+                with h5py.File(fname,'r') as f:
+                    S = f['/entry/instrument/falconx/data'][:]
+            
+                S = S[:,energy<Emax*1.1]
+            if XRD:
+                # import azimuthally integrated data
+                aname = getAzintFname(fname)
+                with h5py.File(aname,'r') as f:
+                    try:
+                        x_xrd = f['q'][:]
+                        Q = True
+                    except KeyError:
+                        x_xrd = f['2th'][:]
+                        Q = False
+                    #I += np.mean(f['I'][:],axis=0)
+                    I = f['I'][:]
+            # import meta data and normalize to I0
+            meta = getMetaData(fname)
+            I0 = meta['I0']
+            # normalize
 
-        if I0 == None:
-            I0 = 1
-        
-        if XRF:
-            S = (S.T/I0).T.astype(np.uint32)
-        if XRD:
-            I = (I.T/I0).T.astype(np.uint32)
-            x_xrd = x_xrd[I[0,:]>0]
-            I = I[:,I[0,:]>0]
-
-        # get the motor names, nominal and registred positions
-        M1, M2 = getMotorSteps(fname) # Return list of lists [[motor_name_1,nominal,registred], ...]
-        y = M1[1] # registered motor position for the fast motor
-        x = M2[1] # registered motor position for the slow motor
-        if len(M2[1]) != len(M2[2]): # if the length of nominal and registered positions do not match
-            x = np.repeat(x,len(y)/(len(x)))
-
-        print(f'x shape: {np.shape(x)}\ny shape: {np.shape(y)}')
-        # get the shape of the map from the nominal positions
-        map_shape = (len(M2[1])-1,len(M1[1])-1)
-        # reshape x and y grids to the map dimensions
-        xx_new = x.reshape(map_shape) 
-        yy_new = y.reshape(map_shape)
-        if XRF:
-            SS_new = S.reshape((map_shape[0],map_shape[1],S.shape[-1]))
-        if XRD:
-            II_new = I.reshape((map_shape[0],map_shape[1],I.shape[-1]))
-        if i<1:
-            xx = xx_new
-            yy = yy_new
+            if I0 == None:
+                I0 = 1
+            
             if XRF:
-                SS = SS_new
+                S = (S.T/I0).T.astype(np.uint32)
             if XRD:
-                II = II_new
-            # get the number of overlapping indices
-            step_size = np.mean(np.diff(xx,axis=0))
-        else:
-            overlap = round(np.mean(xx[-1,:]-xx_new[0,:])/step_size)+1
-            # set the overlapping indices to the mean 
-            xx[-overlap:,:] = xx[-overlap:,:]   #(xx[-overlap:,:]+xx_new[:overlap,:])/2
-            yy[-overlap:,:] = yy[-overlap:,:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
-            if XRF: 
-                SS[-overlap:,:] = SS[-overlap:,:,:] #(SS[-overlap:,:,:]+SS_new[:overlap,:,:])/2
-            if XRD:
-                II[-overlap:,:] = II[-overlap:,:,:]
-            # append the new values
-            xx = np.append(xx,xx_new[overlap:,:],axis=0)
-            yy = np.append(yy,yy_new[overlap:,:],axis=0)
+                I = (I.T/I0).T.astype(np.uint32)
+                x_xrd = x_xrd[I[0,:]>0]
+                I = I[:,I[0,:]>0]
+
+            # get the motor names, nominal and registred positions
+            M1, M2 = getMotorSteps(fname) # Return list of lists [[motor_name_1,nominal,registred], ...]
+            y = M1[2] # registered motor position for the fast motor
+            x = M2[2] # registered motor position for the slow motor
+            if len(M1[1]) != len(M2[2]): # if the length of nominal and registered positions do not match
+                x = np.repeat(x,len(y)/(len(x)))
+
+            # get the shape of the map from the nominal positions
+            map_shape = (len(M2[1]),len(M1[1]))
+            # reshape x and y grids to the map dimensions
+            xx_new = x 
+            yy_new = y
             if XRF:
-                SS = np.append(SS,SS_new[overlap:,:,:],axis=0)
+                SS_new = S.reshape((map_shape[0],map_shape[1],S.shape[-1]))
             if XRD:
-                II = np.append(II,II_new[overlap:,:,:],axis=0)
+                II_new = I.reshape((map_shape[0],map_shape[1],I.shape[-1]))
+            if i<1:
+                xx = xx_new
+                yy = yy_new
+                if XRF:
+                    SS = SS_new
+                if XRD:
+                    II = II_new
+                # get the number of overlapping indices
+                step_size = np.mean(np.diff(xx,axis=0))
+            else:
+                overlap = round(np.mean(xx[-1]-xx_new[0])/step_size)+1
+                # set the overlapping indices to the mean 
+                xx[-overlap:] = xx[-overlap:]   #(xx[-overlap:,:]+xx_new[:overlap,:])/2
+                yy[-overlap:] = yy[-overlap:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
+                if XRF: 
+                    SS[-overlap:,:] = SS[-overlap:,:,:] #(SS[-overlap:,:,:]+SS_new[:overlap,:,:])/2
+                if XRD:
+                    II[-overlap:,:] = II[-overlap:,:,:]
+                # append the new values
+                xx = np.append(xx,xx_new[overlap:],axis=0)
+                yy = np.append(yy,yy_new[overlap:],axis=0)
+                if XRF:
+                    SS = np.append(SS,SS_new[overlap:,:,:],axis=0)
+                if XRD:
+                    II = np.append(II,II_new[overlap:,:,:],axis=0)
     if XRD and XRF:
-        return xx,yy,SS,II
+        return xx,yy,SS,II,x_xrd
     elif XRD:
-        return xx,yy,II
+        return xx,yy,II,x_xrd
     else:
         return xx,yy,SS
