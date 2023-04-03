@@ -10,6 +10,13 @@ import ipywidgets as ipyw
 import IPython
 import fabio
 
+def reduceArray(a,reduction_factor):
+    """Reduce the size of an array by step-wise averaging"""
+    step = reduction_factor
+    last_index = a.shape[0]-step
+    a = np.mean([a[i:last_index+i+1:step] for i in range(reduction_factor)],axis=0)
+    return a
+
 def keV2A(E):
     """Convert keV to Angstrom"""
     try:
@@ -182,11 +189,20 @@ def getMetaDic(fname):
                     data[key] = f['/entry/instrument/'][key][k][:]
     return data
 
-def findAllScans(descending=True):
-    """Return a sorted list of all scans in the current visit"""
+   
+def findAllScans(scan_type='any',descending=True):
+    """
+    Return a sorted list of all scans in the current visit
+    Use scan_type (str) to specify which scan type to search for, i.e. 'timescan', 'dscan', 'ascan', etc.
+    """
     proposal, visit = getCurrentProposal()
     files = sorted(glob.glob(f'/data/visitors/danmax/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.basename, reverse=descending)
-    return [f for f in files if not ('pilatus.h5' in f or '_falconx.h5' in f)]
+    files = [f for f in files if not ('pilatus.h5' in f or '_falconx.h5' in f)]
+    if scan_type != 'any':
+        files = [f for f in files if scan_type in getScanType(f)]
+    if len(files)<1:
+        print(f"No scans of type '{scan_type}' found in '/data/visitors/danmax/{proposal}/{visit}/raw/'")    
+    return files
 
 
 def findScan(scan_id):
@@ -338,7 +354,7 @@ def singlePeakFit(x,y):
     except RuntimeError:
         print('sum(X) fit did not converge!')
         convergence = False
-        popt = [None]*4
+        popt = [np.nan]*4
 
     amp,pos,fwhm,bgr = popt
     sigma = fwhm/(2*np.sqrt(2*np.log(2)))
@@ -383,6 +399,7 @@ def integrateFile(fname, config,embed_meta_data=False):
     
     ## Note on azimuthal bins ##
     
+    If azimuthal bins are used, the integrated data will be saved in **/process/azint_binned/**/
     The azimuthal integration direction is clockwise with origin in the inboard horizontal axis ("3 o'clock"). The azimuthal bins
     can be specified in several ways:
     int Number of bins out of the full 360° azimuthal range.
@@ -415,26 +432,40 @@ def integrateFile(fname, config,embed_meta_data=False):
         else:
             config['mask'] = fabio.open(mask_fname).data 
     
+    # check whether binned integration should be used
+    azi_bins = config['azimuth_bins']
+    binned = type(azi_bins) != type(None)
+    if type(azi_bins) == int:
+        # convert integer to array of bin boundaries
+        azi_bins = np.linspace(0,360,azi_bins+1)
+    
     # initialize the AzimuthalIntegrator
     ai = AzimuthalIntegrator(**config)
-    
     
     # HDF5 dataset entry path
     dset_name = '/entry/instrument/pilatus/data'
 
     # read the meta data form the .h5 master file
     meta = getMetaDic(fname)
+    
     # prepared output path and filename
-    output_fname = fname.replace('raw', 'process/azint').replace('.h5','_pilatus_integrated.h5')
+    if binned:
+        output_fname = fname.replace('raw', 'process/azint').replace('.h5','_pilatus_integrated.h5')
+    else:
+        output_fname = fname.replace('raw', 'process/azint_binned').replace('.h5','_pilatus_integrated.h5')
     output_folder = os.path.split(output_fname)[0]
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
-    
-    
+
     # write to output file
     with h5py.File(output_fname,'w') as fi:
         # write the integration configuration information to the output file
         fi.create_dataset(ai.unit, data=ai.radial_axis)
+        if binned:
+            # bin centers
+            fi.create_dataset('phi', data=ai.azimuth_axis)
+            fi.create_dataset('bin_bounds', data=azi_bins)
+        
         with open(config['poni_file'], 'r') as poni:
             p = fi.create_dataset('poni_file', data=poni.read())
             p.attrs['filename'] = config['poni_file']
@@ -471,10 +502,11 @@ def integrateFile(fname, config,embed_meta_data=False):
                 if sigma is not None:
                     sigma_dset[i] = sigma
         progress.value = i+1
-
+        
+        
 def getMotorSteps(fname):
     """
-    Return motor name(s), nominal positions, and registred (unique) positions for a given scan.
+    Return motor name(s), nominal positions, and registred positions for a given scan.
         Return list of lists [[motor_name_1,nominal,registred], ...]
     """
     
@@ -489,7 +521,7 @@ def getMotorSteps(fname):
         # get the logged motor position
         motor_entry_id = [key for key in dic.keys() if motor in key][0]
         motor_pos = dic[motor_entry_id]
-        motor_pos = np.unique(motor_pos)
+        #motor_pos = np.unique(motor_pos)
         # compare nominal and actual motor positions
         if not np.all(nominal_pos == motor_pos):
             print(f'The nominal and registred motor positions for {motor} do not match!')
