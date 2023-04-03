@@ -10,6 +10,13 @@ import ipywidgets as ipyw
 import IPython
 import fabio
 
+def reduceArray(a,reduction_factor):
+    """Reduce the size of an array by step-wise averaging"""
+    step = reduction_factor
+    last_index = a.shape[0]-step
+    a = np.mean([a[i:last_index+i+1:step] for i in range(reduction_factor)],axis=0)
+    return a
+
 def keV2A(E):
     """Convert keV to Angstrom"""
     try:
@@ -338,7 +345,7 @@ def singlePeakFit(x,y):
     except RuntimeError:
         print('sum(X) fit did not converge!')
         convergence = False
-        popt = [None]*4
+        popt = [np.nan]*4
 
     amp,pos,fwhm,bgr = popt
     sigma = fwhm/(2*np.sqrt(2*np.log(2)))
@@ -474,7 +481,7 @@ def integrateFile(fname, config,embed_meta_data=False):
 
 def getMotorSteps(fname):
     """
-    Return motor name(s), nominal positions, and registred (unique) positions for a given scan.
+    Return motor name(s), nominal positions, and registred positions for a given scan.
         Return list of lists [[motor_name_1,nominal,registred], ...]
     """
     
@@ -489,7 +496,7 @@ def getMotorSteps(fname):
         # get the logged motor position
         motor_entry_id = [key for key in dic.keys() if motor in key][0]
         motor_pos = dic[motor_entry_id]
-        motor_pos = np.unique(motor_pos)
+        #motor_pos = np.unique(motor_pos)
         # compare nominal and actual motor positions
         if not np.all(nominal_pos == motor_pos):
             print(f'The nominal and registred motor positions for {motor} do not match!')
