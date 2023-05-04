@@ -450,9 +450,9 @@ def integrateFile(fname, config,embed_meta_data=False):
     
     # prepared output path and filename
     if binned:
-        output_fname = fname.replace('raw', 'process/azint').replace('.h5','_pilatus_integrated.h5')
-    else:
         output_fname = fname.replace('raw', 'process/azint_binned').replace('.h5','_pilatus_integrated.h5')
+    else:
+        output_fname = fname.replace('raw', 'process/azint').replace('.h5','_pilatus_integrated.h5')
     output_folder = os.path.split(output_fname)[0]
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
