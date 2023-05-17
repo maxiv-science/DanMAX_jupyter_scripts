@@ -553,13 +553,15 @@ def makeMap(x, y, actualXsteps, nominalYsteps, signal):
     ZI = griddata((x.reshape(-1), y.reshape(-1)), signal.reshape(-1), (XI, YI), 'nearest')
     return ZI
 
-def stitchScans(scans, XRF = True, XRD = True, proposal=None, visit=None):
+def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14478]]proposal=None, visit=None):
     """Returns stitched maps of scans
 
     scans: list of scans that needs to be stitched
     XRF: import XRF data (default True)
     XRF: import XRD data (default True)
-    test_folder: path to a folder with data, used for testing
+    xrf_calibration: Calibration parameters for the rayspec_detector (calibration is np.range(4096)*xrf_calibration[0]-xrf_calibration[1]
+    proposal: select another proposal for testing
+    visit: select another visit for testing
     """
 
     if not XRF and not XRD:
@@ -572,13 +574,13 @@ def stitchScans(scans, XRF = True, XRD = True, proposal=None, visit=None):
         with h5py.File(fname,'r') as f:
             Emax = f['/entry/instrument/pilatus/energy'][()]*10**-3 # keV
             # Energy calibration (Conversion of chanels to energy)      
-            energy = np.arange(4096)*0.01280573-0.14478
+            energy = np.arange(4096)*xrf_calibration[0]-xrf_calibration[1]
 
     for i,scan in enumerate(scans):
         print(f'scan-{scan} - {i+1} of {len(scans)}',end='\r')
         # print statements are suppressed within the following context
         with io.capture_output() as captured:
-            fname = findScan(int(scans), proposal=proposal, visit=visit)
+            fname = findScan(int(scan), proposal=proposal, visit=visit)
             # import falcon x data
             if XRF:        
                 with h5py.File(fname,'r') as f:
@@ -602,15 +604,17 @@ def stitchScans(scans, XRF = True, XRD = True, proposal=None, visit=None):
             I0 = meta['I0']
             # normalize
 
-            if I0 == None:
+            if I0 is None:
                 I0 = 1
             
             if XRF:
                 S = (S.T/I0).T.astype(np.uint32)
+                data_shape = S.shape[0]
             if XRD:
                 I = (I.T/I0).T.astype(np.uint32)
                 x_xrd = x_xrd[I[0,:]>0]
                 I = I[:,I[0,:]>0]
+                data_shape = I.shape[0]
 
             # get the motor names, nominal and registred positions
             M1, M2 = getMotorSteps(fname) # Return list of lists [[motor_name_1,nominal,registred], ...]
@@ -621,6 +625,10 @@ def stitchScans(scans, XRF = True, XRD = True, proposal=None, visit=None):
 
             # get the shape of the map from the nominal positions
             map_shape = (len(M2[1]),len(M1[1]))
+            if np.prod(map_shape) != np.prod(data_shape):
+                map_shape = (map_shape[0]-1,map_shape[1]-1)
+
+           
             # reshape x and y grids to the map dimensions
             xx_new = x 
             yy_new = y
