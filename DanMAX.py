@@ -73,7 +73,7 @@ def getCurrentProposal(proposal=None, visit=None):
         visit = visit_new
     return proposal, visit
 
-def getLatestScan(scan_type='any',proposal='',visit='',require_integrated=False):
+def getLatestScan(scan_type='any',proposal='',visit='',require_integrated=False,proposal=None,visit=None):
     """
     Return the path to the latest /raw/*/*.h5 scan for the provided proposal and visit.
     Defaults to the current proposal directory of proposal and visit are not specified.
@@ -83,7 +83,7 @@ def getLatestScan(scan_type='any',proposal='',visit='',require_integrated=False)
     Use require_integrated = True to ensure that the returned scan has a valid integrated .h5 file.
     """
     if not proposal or not visit:
-        proposal, visit = getCurrentProposal()
+        proposal, visit = getCurrentProposal(proposal,visit)
         #print(proposal, visit)
     files = sorted(glob.glob(f'/data/visitors/danmax/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.getctime, reverse=True)
 
@@ -196,12 +196,12 @@ def getMetaDic(fname):
     return data
 
    
-def findAllScans(scan_type='any',descending=True):
+def findAllScans(scan_type='any',descending=True,proposal=None,visit=None):
     """
     Return a sorted list of all scans in the current visit
     Use scan_type (str) to specify which scan type to search for, i.e. 'timescan', 'dscan', 'ascan', etc.
     """
-    proposal, visit = getCurrentProposal()
+    proposal, visit = getCurrentProposal(proposal,visit)
     files = sorted(glob.glob(f'/data/visitors/danmax/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.basename, reverse=descending)
     files = [f for f in files if not ('pilatus.h5' in f or '_falconx.h5' in f)]
     if scan_type != 'any':
@@ -211,7 +211,7 @@ def findAllScans(scan_type='any',descending=True):
     return files
 
 
-def findScan(scan_id):
+def findScan(scan_id,proposal=None,visit=None):
     """Return the path of a specified scan number"""
     if type(scan_id) == int:
         scan_id = f'scan-{scan_id:04d}'
@@ -221,7 +221,7 @@ def findScan(scan_id):
     for sc in findAllScans():
         if scan_id in sc:
             return sc
-    print('Unable to find {} in {}/{}'.format(scan_id,*getCurrentProposal()))
+    print('Unable to find {} in {}/{}'.format(scan_id,*getCurrentProposal(proposal,visit)))
     
     
 def getScanType(fname):
