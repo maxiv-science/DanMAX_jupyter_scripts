@@ -550,7 +550,7 @@ def makeMap(x, y, actualXsteps, nominalYsteps, signal):
     ZI = griddata((x.reshape(-1), y.reshape(-1)), signal.reshape(-1), (XI, YI), 'nearest')
     return ZI
 
-def stitchScans(scans, XRF = True, XRD = True, testfolder = ''):
+def stitchScans(scans, XRF = True, XRD = True, proposal=None, visit=None):
     """Returns stitched maps of scans
 
     scans: list of scans that needs to be stitched
@@ -564,12 +564,7 @@ def stitchScans(scans, XRF = True, XRD = True, testfolder = ''):
 
     if XRF:
         # import falcon x data
-        if not testfolder:
-            fname = findScan(int(scans[0]))
-        else:
-            fname = os.path.join(testfolder,f'scan-{scans[0]:04d}.h5')
-            print(fname)
-
+        fname = findScan(int(scans[0]), proposal=proposal, visit=visit)
 
         with h5py.File(fname,'r') as f:
             Emax = f['/entry/instrument/pilatus/energy'][()]*10**-3 # keV
@@ -580,11 +575,7 @@ def stitchScans(scans, XRF = True, XRD = True, testfolder = ''):
         print(f'scan-{scan} - {i+1} of {len(scans)}',end='\r')
         # print statements are suppressed within the following context
         with io.capture_output() as captured:
-            if not testfolder:
-                fname = findScan(int(scans))
-            else:
-                fname = os.path.join(testfolder,f'scan-{scans[0]:04d}.h5')
-                print(fname)
+            fname = findScan(int(scans), proposal=proposal, visit=visit)
             # import falcon x data
             if XRF:        
                 with h5py.File(fname,'r') as f:
