@@ -622,8 +622,8 @@ def stitchScans(scans, XRF = True, XRD = True, testfolder = ''):
                 if XRD:
                     II = np.append(II,II_new[overlap:,:,:],axis=0)
     if XRD and XRF:
-        return xx,yy,SS,II,x_xrd
+        return xx,yy,SS,II,x_xrd,Q
     elif XRD:
-        return xx,yy,II,x_xrd
+        return xx,yy,II,x_xrd,Q
     else:
         return xx,yy,SS
