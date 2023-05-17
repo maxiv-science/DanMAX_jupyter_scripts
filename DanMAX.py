@@ -516,9 +516,10 @@ def getMotorSteps(fname,proposal=None,visit=None):
     """
     
     dic = getMetaDic(fname)
-    scan_type = getScanType(fname,proposal,visit).lower().split()
+    scan_type = getScanType(fname,proposal,visit).split()
     motors = [s for s in scan_type if s.islower()][1:]
     motor_steps = []
+    print(motors)
     for motor in motors:
         # get the nominal motor position from the macro title
         start, stop, steps = [scan_type[i+1:i+4] for i,s in enumerate(scan_type) if motor in s][0]
