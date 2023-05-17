@@ -61,10 +61,16 @@ def Q2tth(Q,E):
     except ZeroDivisionError:
         return np.full(Q.shape,0.0)
 
-def getCurrentProposal():
-    """Return current proposal number and visit number"""
+def getCurrentProposal(proposal=None, visit=None):
+    """Return current proposal number and visit number
+    If proposal/visit is provided it will pass it back"""
+    
     idx = os.getcwd().split('/').index('danmax')
-    proposal, visit =  os.getcwd().split('/')[idx+1:idx+3]
+    proposal_new, visit_new =  os.getcwd().split('/')[idx+1:idx+3]
+    if proposal == None:
+        proposal = proposal_new
+    if visit == None:
+        visit = visit_new
     return proposal, visit
 
 def getLatestScan(scan_type='any',proposal='',visit='',require_integrated=False):
