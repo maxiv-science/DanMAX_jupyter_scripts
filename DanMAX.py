@@ -553,7 +553,7 @@ def makeMap(x, y, actualXsteps, nominalYsteps, signal):
     ZI = griddata((x.reshape(-1), y.reshape(-1)), signal.reshape(-1), (XI, YI), 'nearest')
     return ZI
 
-def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14478]]proposal=None, visit=None):
+def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14478],proposal=None, visit=None):
     """Returns stitched maps of scans
 
     scans: list of scans that needs to be stitched
