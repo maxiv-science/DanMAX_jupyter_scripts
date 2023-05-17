@@ -113,3 +113,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+#vim swap file
+*.swp
+
+#test notebook
+development_test_notebook.ipynb
