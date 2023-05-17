@@ -66,6 +66,9 @@ def getCurrentProposal(proposal=None, visit=None):
     """Return current proposal number and visit number
     If proposal/visit is provided it will pass it back"""
     
+    if proposal != None and visit != None:
+        return proposal, visit
+
     idx = os.getcwd().split('/').index('danmax')
     proposal_new, visit_new =  os.getcwd().split('/')[idx+1:idx+3]
     if proposal == None:
