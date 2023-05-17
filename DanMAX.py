@@ -73,7 +73,7 @@ def getCurrentProposal(proposal=None, visit=None):
         visit = visit_new
     return proposal, visit
 
-def getLatestScan(scan_type='any',proposal='',visit='',require_integrated=False,proposal=None,visit=None):
+def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=None):
     """
     Return the path to the latest /raw/*/*.h5 scan for the provided proposal and visit.
     Defaults to the current proposal directory of proposal and visit are not specified.
@@ -82,9 +82,8 @@ def getLatestScan(scan_type='any',proposal='',visit='',require_integrated=False,
     
     Use require_integrated = True to ensure that the returned scan has a valid integrated .h5 file.
     """
-    if not proposal or not visit:
-        proposal, visit = getCurrentProposal(proposal,visit)
-        #print(proposal, visit)
+    proposal, visit = getCurrentProposal(proposal,visit)
+    #print(proposal, visit)
     files = sorted(glob.glob(f'/data/visitors/danmax/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.getctime, reverse=True)
 
     for file in files:
@@ -130,7 +129,7 @@ def getAzintFname(fname):
     except OSError as err:
         print(err.strerror)
 
-def getMetaData(fname,custom_keys=[],relative=True):
+def getMetaData(fname,custom_keys=[],relative=True,proposal=None,visit=None):
     """
     Return dictionary of selected meta data. Return {key:None} if key is not available.
     Use custom_keys to provide a list of custom keys for additional parameters. Should include the full .h5 path.
@@ -144,7 +143,7 @@ def getMetaData(fname,custom_keys=[],relative=True):
     relative: Bool - Toggle wheteher to return data relative to the specific scan (True) or as absolute values (False). Default: True
     """
     if fname.startswith('scan-'):
-        fname = findScan(fname)
+        fname = findScan(fname,proposal,visit)
         
     data = {'I0':None,
             'time':None,
@@ -218,16 +217,16 @@ def findScan(scan_id,proposal=None,visit=None):
     elif type(scan_id) == str:
         scan_id = 'scan-'+scan_id.strip().split('scan-')[-1][:4]
 
-    for sc in findAllScans():
+    for sc in findAllScans(proposal=proposal,visit=visit):
         if scan_id in sc:
             return sc
     print('Unable to find {} in {}/{}'.format(scan_id,*getCurrentProposal(proposal,visit)))
     
     
-def getScanType(fname):
+def getScanType(fname,proposal=None,visit=None):
     """Return the scan type based on the .h5 scan title"""
     if fname.startswith('scan-'):
-        fname = findScan(fname)
+        fname = findScan(fname,proposal=proposal,visit=visit)
     with h5py.File(fname,'r') as f:
         try:
             scan_type = f['entry/title/'][()].decode()
@@ -238,9 +237,9 @@ def getScanType(fname):
         except KeyError:
             print('No entry title available')
 
-def getExposureTime(fname):
+def getExposureTime(fname,proposal=None,visit=None):
     """Return the exposure time in seconds as determined from the scan type"""
-    scan_type = getScanType(fname)
+    scan_type = getScanType(fname,proposal=proposal,visit=visit)
     if 'timescan' in scan_type:
         exposure = scan_type.split()[2]
     elif 'ascan' in scan_type:
@@ -300,10 +299,10 @@ def averageLargeScan(fname):
     im = im/no_of_frames
     return im
     
-def getAverageImage(fname='latest'):
+def getAverageImage(fname='latest',proposal=None,visit=None):
     """Return the average image of a scan - Default is the latest scan in the current folder"""
     if fname.lower() == 'latest':
-        fname = getLatestScan()
+        fname = getLatestScan(proposal,visit)
     with h5py.File(fname, 'r') as fh:
         no_of_frames = fh['/entry/instrument/pilatus/data'].shape[0]
         if no_of_frames < 1000:
@@ -510,14 +509,14 @@ def integrateFile(fname, config,embed_meta_data=False):
         progress.value = i+1
         
         
-def getMotorSteps(fname):
+def getMotorSteps(fname,proposal=None,visit=None):
     """
     Return motor name(s), nominal positions, and registred positions for a given scan.
         Return list of lists [[motor_name_1,nominal,registred], ...]
     """
     
     dic = getMetaDic(fname)
-    scan_type = getScanType(fname).lower().split()
+    scan_type = getScanType(fname,proposal,visit).lower().split()
     motors = [s for s in scan_type if s.islower()][1:]
     motor_steps = []
     for motor in motors:
