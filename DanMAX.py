@@ -662,8 +662,8 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
                 if XRD:
                     II = np.append(II,II_new[overlap:,:,:],axis=0)
     if XRD and XRF:
-        return xx,yy,SS,energy,II,x_xrd,Q
+        return xx,yy,SS,energy,Emax,II,x_xrd,Q
     elif XRD:
         return xx,yy,II,x_xrd,Q
     else:
-        return xx,yy,SS,energy
+        return xx,yy,SS,energy,Emax
