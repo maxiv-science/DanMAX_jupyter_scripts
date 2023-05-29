@@ -554,16 +554,31 @@ def makeMap(x, y, actualXsteps, nominalYsteps, signal):
     return ZI
 
 def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14478],proposal=None, visit=None):
-    """Returns stitched maps of scans
+    """Returns stitched XRF and XRD maps of multiple scans or a single scan
 
-    scans: list of scans that needs to be stitched
-    XRF: import XRF data (default True)
-    XRF: import XRD data (default True)
-    xrf_calibration: Calibration parameters for the rayspec_detector (calibration is np.range(4096)*xrf_calibration[0]-xrf_calibration[1]
-    proposal: select another proposal for testing
-    visit: select another visit for testing
+    Output parameters:
+    -xx x coordinates for the map (motor positions)
+    -yy y coordinates for the map (motor positions)
+    -SS XRF map.
+    -energy list of energies
+    -Emax energy used for the scan
+    -II Diffraction intensity
+    -x_xrd 2-theta for diffraction
+    -Q q values for diffraction
+    
+    Note that SS, energy, and Emax are only returned if the input XRF == True (default)
+    Note that II, x_xrd, and Q are only returned if the input XRD == True (default)
+
+    Input parameters:
+    -scans: list of scans that needs to be stitched
+    -XRF: import XRF data (default True)
+    -XRF: import XRD data (default True)
+    -xrf_calibration: Calibration parameters for the rayspec_detector (calibration is np.range(4096)*xrf_calibration[0]-xrf_calibration[1]
+    -proposal: select another proposal for testing
+    -visit: select another visit for testing
     """
 
+    #Check if an output is expected
     if not XRF and not XRD:
         raise Exception('Neither XRF nor XRD map has been requested')
 
