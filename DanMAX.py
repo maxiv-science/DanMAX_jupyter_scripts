@@ -560,15 +560,15 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
     Output parameters:
     -xx x coordinates for the map (motor positions)
     -yy y coordinates for the map (motor positions)
-    -SS XRF map.
+    -xrf_map XRF map.
     -energy list of energies
     -Emax energy used for the scan
-    -II Diffraction intensity
-    -x_xrd 2-theta for diffraction
-    -Q q values for diffraction
+    -xrd_map Diffraction intensity
+    -x_xrd 2-theta or q for diffraction
+    -Q Boolian, if true x_xrd is in q otherwise it is  2theta
     
-    Note that SS, energy, and Emax are only returned if the input XRF == True (default)
-    Note that II, x_xrd, and Q are only returned if the input XRD == True (default)
+    Note that xrf_map, energy, and Emax are only returned if the input XRF == True (default)
+    Note that xrd_map, x_xrd, and Q are only returned if the input XRD == True (default)
 
     Input parameters:
     -scans: list of scans that needs to be stitched
@@ -655,17 +655,17 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
 
             #Reshape data to map dimensions
             if XRF:
-                SS_new = S.reshape((map_shape[0],map_shape[1],S.shape[-1]))
+                xrf_map_new = S.reshape((map_shape[0],map_shape[1],S.shape[-1]))
             if XRD:
-                II_new = I.reshape((map_shape[0],map_shape[1],I.shape[-1]))
+                xrd_map_new = I.reshape((map_shape[0],map_shape[1],I.shape[-1]))
             if i<1:
                 #If its the first iteration, create temporary variables, and find the overlap
                 xx = xx_new
                 yy = yy_new
                 if XRF:
-                    SS = SS_new
+                    xrf_map = xrf_map_new
                 if XRD:
-                    II = II_new
+                    xrd_map = xrd_map_new
                 # get the number of overlapping indices
                 step_size = np.mean(np.diff(xx,axis=0))
             else:
@@ -675,20 +675,20 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
                 xx[-overlap:] = xx[-overlap:]   #(xx[-overlap:,:]+xx_new[:overlap,:])/2
                 yy[-overlap:] = yy[-overlap:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
                 if XRF: 
-                    SS[-overlap:,:] = SS[-overlap:,:,:] 
+                    xrf_map[-overlap:,:] = xrf_map[-overlap:,:,:] 
                 if XRD:
-                    II[-overlap:,:] = II[-overlap:,:,:]
+                    xrd_map[-overlap:,:] = xrd_map[-overlap:,:,:]
                 # append the new values
                 xx = np.append(xx,xx_new[overlap:],axis=0)
                 yy = np.append(yy,yy_new[overlap:],axis=0)
                 if XRF:
-                    SS = np.append(SS,SS_new[overlap:,:,:],axis=0)
+                    xrf_map = np.append(xrf_map,xrf_map_new[overlap:,:,:],axis=0)
                 if XRD:
-                    II = np.append(II,II_new[overlap:,:,:],axis=0)
+                    xrd_map = np.append(xrd_map,xrd_map_new[overlap:,:,:],axis=0)
     #Return maps depending on the requested data type
     if XRD and XRF:
-        return xx,yy,SS,energy,Emax,II,x_xrd,Q
+        return xx,yy,xrf_map,energy,Emax,xrd_map,x_xrd,Q
     elif XRD:
-        return xx,yy,II,x_xrd,Q
+        return xx,yy,xrd_map,x_xrd,Q
     else:
-        return xx,yy,SS,energy,Emax
+        return xx,yy,xrf_map,energy,Emax
