@@ -554,7 +554,8 @@ def makeMap(x, y, actualXsteps, nominalYsteps, signal):
     return ZI
 
 def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14478],proposal=None, visit=None):
-    """Returns stitched XRF and XRD maps of multiple scans or a single scan
+    """Returns stitched XRF and XRD maps of multiple scans or a single scan 
+    For a single scan it maps the x and y motor coordinates to the collected data
 
     Output parameters:
     -xx x coordinates for the map (motor positions)
@@ -617,11 +618,13 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
             # import meta data and normalize to I0
             meta = getMetaData(fname)
             I0 = meta['I0']
-            # normalize
 
+            # Check if I0 exists
             if I0 is None:
                 I0 = 1
             
+            #Normalize the data with I0 and get data shape, from either XRF or XRD data
+            #To ensure to have it no matter which one is selected
             if XRF:
                 S = (S.T/I0).T.astype(np.uint32)
                 data_shape = S.shape[0]
@@ -640,6 +643,8 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
 
             # get the shape of the map from the nominal positions
             map_shape = (len(M2[1]),len(M1[1]))
+            #Check if that shape fits with the actual shape of the data
+            #This will not always be the case, as different recording software records different things
             if np.prod(map_shape) != np.prod(data_shape):
                 map_shape = (map_shape[0]-1,map_shape[1]-1)
 
@@ -647,11 +652,14 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
             # reshape x and y grids to the map dimensions
             xx_new = x 
             yy_new = y
+
+            #Reshape data to map dimensions
             if XRF:
                 SS_new = S.reshape((map_shape[0],map_shape[1],S.shape[-1]))
             if XRD:
                 II_new = I.reshape((map_shape[0],map_shape[1],I.shape[-1]))
             if i<1:
+                #If its the first iteration, create temporary variables, and find the overlap
                 xx = xx_new
                 yy = yy_new
                 if XRF:
@@ -661,12 +669,13 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
                 # get the number of overlapping indices
                 step_size = np.mean(np.diff(xx,axis=0))
             else:
+                #For later iterations, find the overlap, and use only the newest data.
                 overlap = round(np.mean(xx[-1]-xx_new[0])/step_size)+1
                 # set the overlapping indices to the mean 
                 xx[-overlap:] = xx[-overlap:]   #(xx[-overlap:,:]+xx_new[:overlap,:])/2
                 yy[-overlap:] = yy[-overlap:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
                 if XRF: 
-                    SS[-overlap:,:] = SS[-overlap:,:,:] #(SS[-overlap:,:,:]+SS_new[:overlap,:,:])/2
+                    SS[-overlap:,:] = SS[-overlap:,:,:] 
                 if XRD:
                     II[-overlap:,:] = II[-overlap:,:,:]
                 # append the new values
@@ -676,6 +685,7 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
                     SS = np.append(SS,SS_new[overlap:,:,:],axis=0)
                 if XRD:
                     II = np.append(II,II_new[overlap:,:,:],axis=0)
+    #Return maps depending on the requested data type
     if XRD and XRF:
         return xx,yy,SS,energy,Emax,II,x_xrd,Q
     elif XRD:
