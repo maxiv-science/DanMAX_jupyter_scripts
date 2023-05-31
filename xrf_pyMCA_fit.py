@@ -6,7 +6,7 @@
 # 4. Configuration file for the fitting
 # 5. Select the output files you want to generate
 
-session_path = '/data/visitors/nanomax/proposalID/visit/'
+session_path = '/data/visitors/danmax/{0}/{1}/'
 sample_name = 'sample'
 config_files = 'blub.cfg'
 detector = 'falconx'          # 'falconx' at danmax, 'x3mini' or 'xspress3' elsewhere
@@ -33,11 +33,13 @@ import sys
 import os
 import time
 import numpy
+import argparse
 from PyMca5.PyMcaPhysics.xrf.FastXRFLinearFit import FastXRFLinearFit
 from PyMca5.PyMcaPhysics.xrf.XRFBatchFitOutput import OutputBuffer
 from PyMca5.PyMcaPhysics.xrf.ClassMcaTheory import McaTheory
 from PyMca5.PyMcaIO import ConfigDict
 from silx.gui import qt
+import DanMAX as DM
 
 class xrfBatch():
 
@@ -50,11 +52,12 @@ class xrfBatch():
         self.config_file  = config_file
         self.detector     = detector
         self.channel      = channel
+        self.meta         = DM.getMetaData(f'scan-{self.scan_nr:04}')
         self.create_out_dirs()
 
     # define where to save all the data
     def create_out_dirs(self):
-        self.out_dir = self.session_path+'process/'+self.sample_name+'/scan_'+str(self.scan_nr).zfill(6)+'/xrf_pymca/'
+        self.out_dir = self.session_path+'process/'+self.sample_name+f'/scan_{self.scan_nr:04}xrf_pymca/'
         self.out_dir_pymca_file = self.out_dir+'data/'
         self.out_dir_elements   = self.out_dir+'elements/'
         self.out_dir_spectrum   = self.out_dir+'spectrum/'	
@@ -65,10 +68,10 @@ class xrfBatch():
 
     # Reads a NanoMAX file
     def readData(self, I0_scale_factor=1E-9):
-        input_file=os.path.join(self.session_path,'raw', self.sample_name, '%06u.h5'%self.scan_nr)
+        input_file=os.path.join(self.session_path,'raw', self.sample_name, f'scan-{self.scan_nr:04}.h5')
         print('Reading raw data file: %s' % input_file)
         with h5py.File(input_file, mode='r') as fp:
-            self.cmd = fp['entry/description'][0]
+            self.cmd = fp['title'][0]
             shape = int(self.cmd.split()[8])+1, int(self.cmd.split()[4])+1
             self.dwell = float(self.cmd.split()[-2])
             self.dt = fp['entry/measurement/dt'][:]
@@ -78,7 +81,7 @@ class xrfBatch():
                 shape = nlines, shape[1]
             npixels = shape[0] * shape[1]
             print('Image shape (%d,%d)'%shape)
-            self.I0 = fp['entry/measurement/alba2/1'][0:npixels].reshape(*shape, -1)
+            self.I0 = self.meta['I0'].reshape(*shape, -1)
             #self.xrf = fp['entry/measurement/xspress3/frames'][0:npixels, 3, 0:2600].reshape(*shape, -1) #legacy
 
             self.xrf = fp[f'entry/measurement/'{self.detector}'/data'][0:npixels, self.channel, 0:2600].reshape(*shape, -1) #legacy
@@ -179,9 +182,27 @@ class xrfBatch():
 
 if __name__ == "__main__":
 
+
+    #Adding argument parser
+    parser = argparse.ArgumentParser()
+
+    #Adding Nonoptional arguments
+    parser.add_argument('scan_nr')
+    #Adding noptional arguments
     # read which scan to work on
     scan_nr = int(sys.argv[1])
     t0 = time.time()
+
+
+    if len(sys.argv) >= 5:
+        proposal,visit =  getCurrentProposal(proposal=sys.argv[3],visit=sys.argv[4])
+    elif len(sys.argv) >= 4:
+        proposal,visit =  getCurrentProposal(proposal=sys.argv[3])
+
+    if len(sys.argv) >= 3:
+        config_file = sys.argv[2]
+
+    session_path = sessionpath.format(proposal,visit)
 
     # create an instance of the fit class for each channel
     fits = {}
