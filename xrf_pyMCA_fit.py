@@ -45,7 +45,7 @@ class xrfBatch():
 
     # init with the most important information that is needed over and over again
     def __init__(self, session_path, sample_name, scan_nr, config_file,
-                 detector = 'xspress3', channel = 3):
+                 detector = 'xspress3', channel = 3,):
         self.session_path = session_path
         self.sample_name  = sample_name
         self.scan_nr      = scan_nr
@@ -178,6 +178,24 @@ class xrfBatch():
             #else:
                 #print('Cannot save key=%s'%(path+key))
 
+    def single_scan_fit(self, scan_nr):
+        '''
+        This funciton will run the pipeline on a single scan
+        I.E. the same as running the script through terminal 
+        as script scan_nr
+        '''
+        pass
+
+    def stitch_scan_fit():
+        '''
+        This will run the pipeline on a set of scans.
+        The scans will be collected usung the DM function stitchscans.
+        It needs a costum saveing function, as no single scannr will work.
+        But  maybe it will save to xrf_stitch_from_scan-XXXX"???
+        '''
+        
+        pass
+
 ##############################################################################
 
 if __name__ == "__main__":
@@ -189,6 +207,9 @@ if __name__ == "__main__":
     #Adding Nonoptional arguments
     parser.add_argument('scan_nr')
     #Adding noptional arguments
+    parser.add_argument('--proposal','-p')
+    parser.add_argument('--visit','-v')
+    parser.add_argument('--config','-c')
     # read which scan to work on
     scan_nr = int(sys.argv[1])
     t0 = time.time()
