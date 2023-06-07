@@ -411,6 +411,8 @@ def singlePeakFit(x,y):
 
     amp,pos,fwhm,bgr = popt
     sigma = fwhm/(2*np.sqrt(2*np.log(2)))
+    integral = np.sqrt(2*np.pi)*amp*np.abs(sigma)
+    
     y_calc = gauss(x,amp,pos,fwhm,bgr)
     
     return amp,pos,fwhm,bgr,y_calc
