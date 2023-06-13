@@ -34,6 +34,7 @@ import os
 import time
 import numpy
 import argparse
+import configparser
 from PyMca5.PyMcaPhysics.xrf.FastXRFLinearFit import FastXRFLinearFit
 from PyMca5.PyMcaPhysics.xrf.XRFBatchFitOutput import OutputBuffer
 from PyMca5.PyMcaPhysics.xrf.ClassMcaTheory import McaTheory
@@ -44,20 +45,25 @@ import DanMAX as DM
 class xrfBatch():
 
     # init with the most important information that is needed over and over again
-    def __init__(self, session_path, sample_name, scan_nr, config_file,
-                 detector = 'xspress3', channel = 3,):
+    def __init__(self, session_path, sample_name, scan_list, config_file,
+                 calib_file=None, detector = 'xspress3', channel = 3,):
         self.session_path = session_path
         self.sample_name  = sample_name
-        self.scan_nr      = scan_nr
+        self.scan_list    = scan_list
         self.config_file  = config_file
+        self.calib_file   = calib_file
         self.detector     = detector
         self.channel      = channel
-        self.meta         = DM.getMetaData(f'scan-{self.scan_nr:04}')
+
+        if self.scan_list.len > 1:
+            self.scan_name=f'scan_{self.scan_list[0]:04}_to_scan_{self.scan_list[-1]:04)}'
+        else:
+            self.scan_name=f'scan_{self.scan_list[0]:04}'
         self.create_out_dirs()
 
     # define where to save all the data
     def create_out_dirs(self):
-        self.out_dir = self.session_path+'process/'+self.sample_name+f'/scan_{self.scan_nr:04}xrf_pymca/'
+        self.out_dir = self.session_path+'process/'+self.sample_name+f'/self.{scan_name}_xrf_pymca/'
         self.out_dir_pymca_file = self.out_dir+'data/'
         self.out_dir_elements   = self.out_dir+'elements/'
         self.out_dir_spectrum   = self.out_dir+'spectrum/'	
@@ -67,41 +73,25 @@ class xrfBatch():
         os.makedirs(self.out_dir_spectrum, exist_ok=True)
 
     # Reads a NanoMAX file
-    def readData(self, I0_scale_factor=1E-9):
-        input_file=os.path.join(self.session_path,'raw', self.sample_name, f'scan-{self.scan_nr:04}.h5')
-        print('Reading raw data file: %s' % input_file)
-        with h5py.File(input_file, mode='r') as fp:
-            self.cmd = fp['title'][0]
-            shape = int(self.cmd.split()[8])+1, int(self.cmd.split()[4])+1
-            self.dwell = float(self.cmd.split()[-2])
-            self.dt = fp['entry/measurement/dt'][:]
-            nlines = len(self.dt)
-            if  nlines < shape[0]:
-                print('Lines in file (%d) and lines in scan command (%d) mismatch. Scan was probably interrupted.'%(nlines, shape[0]))
-                shape = nlines, shape[1]
-            npixels = shape[0] * shape[1]
-            print('Image shape (%d,%d)'%shape)
-            self.I0 = self.meta['I0'].reshape(*shape, -1)
-            #self.xrf = fp['entry/measurement/xspress3/frames'][0:npixels, 3, 0:2600].reshape(*shape, -1) #legacy
-
-            self.xrf = fp[f'entry/measurement/'{self.detector}'/data'][0:npixels, self.channel, 0:2600].reshape(*shape, -1) #legacy
-            self.xrf_norm = ((self.xrf*I0_scale_factor)/(self.I0*self.dwell))
-            self.xrf_avg = self.xrf_norm.sum(axis=(0,1))/npixels
-            self.energy = fp['entry/snapshot/energy'][:]
-            self.x = fp['entry/measurement/pseudo/x'][0:npixels].reshape(*shape)
-            self.y = fp['entry/measurement/pseudo/y'][0:npixels].reshape(*shape)
+    def readData(self):
+        self.x,self.y,self.xrf,self.energy = DM.stitchscans(self.scan_list,XRD=false,calibration = self.calibration) 
+#            self.xrf_norm = ((self.xrf*I0_scale_factor)/(self.I0*self.dwell))
+#            self.xrf_avg = self.xrf_norm.sum(axis=(0,1))/npixels
+#            self.energy = fp['entry/snapshot/energy'][:]
+#            self.x = fp['entry/measurement/pseudo/x'][0:npixels].reshape(*shape)
+#            self.y = fp['entry/measurement/pseudo/y'][0:npixels].reshape(*shape)
 
     # Writes a PyMCA readible h5 file
     def writePymcafile(self):
-        pymca_file = os.path.join(f'{self.out_dir_pymca_file}_data_pymca_{str(scan_nr).zfill(6)}_{self.channel}.h5')
+        pymca_file = os.path.join(f'{self.out_dir_pymca_file}_data_pymca_{scan_name}_{self.channel}.h5')
         print("Writing pymca file: %s" % pymca_file)
         with h5py.File(pymca_file, 'w') as ofp:
             ofp.create_dataset('xrf', data=self.xrf, compression='gzip')
-            ofp.create_dataset('xrf_normalized', data=self.xrf_norm, compression='gzip')
-            ofp.create_dataset('xrf_normalized_avg', data=self.xrf_avg, compression='gzip')
-            ofp['I0'] = self.I0[:, :, 0]
-            ofp['I0_average'] = numpy.mean(self.I0)
-            ofp['dwell_time'] = self.dwell
+            #ofp.create_dataset('xrf_normalized', data=self.xrf_norm, compression='gzip')
+            #ofp.create_dataset('xrf_normalized_avg', data=self.xrf_avg, compression='gzip')
+            #ofp['I0'] = self.I0[:, :, 0]
+            #ofp['I0_average'] = numpy.mean(self.I0)
+            #ofp['dwell_time'] = self.dwell
             ofp['energy'] = self.energy
             ofp['positions'] = [self.x,self.y]
             ofp['detector'] = self.detector
@@ -109,14 +99,14 @@ class xrfBatch():
 
     # Linear fitting of xrf stack data. Generate a h5 and/or tiff files with element concentration maps
     def fitElementsToFile(self, make_elements_h5=True, make_elements_tif=False):
-        elem_file_name = f'fitted_elements_{str(scan_nr).zfill(6)}_{self.channel}'
-        print('Generating elemental maps file: %s.h5' % elem_file_name)
+        elem_file_name = f'fitted_elements_{self.scan_name}_{self.channel}'
+        print(f'Generating elemental maps file: {elem_file_name}.h5')
         fastFit = FastXRFLinearFit()
         fastFit.setFitConfigurationFile(self.config_file)
 
         outbuffer = OutputBuffer(outputDir=self.out_dir_elements,
                         outputRoot= elem_file_name,
-                        fileEntry= self.sample_name + '_%06u' % scan_nr,
+                        fileEntry= f'{self.sample_name}_{self.scan_name}',
                         diagnostics=0,
                         tif=make_elements_tif, edf=0, csv=1,
                         h5=make_elements_h5, dat=0,
@@ -124,7 +114,7 @@ class xrfBatch():
                         overwrite=1)
 
         with outbuffer.saveContext():
-            outbuffer = fastFit.fitMultipleSpectra(y=self.xrf_norm,
+            outbuffer = fastFit.fitMultipleSpectra(y=self.xrf,
                         weight=0,
                         refit=1,
                         concentrations=0,
@@ -132,8 +122,8 @@ class xrfBatch():
 
     # Fitting of average spectrum from image stack
     def fitAvgSpectrumToFile(self):
-        spec_file = os.path.join(self.out_dir_spectrum + f'spectrum_{str(scan_nr).zfill(6)}_{self.channel}.h5')
-        print("Writing average-spectrum fit file: %s" % spec_file)
+        spec_file = os.path.join(self.out_dir_spectrum + f'spectrum_{scan_name}_{self.channel}.h5')
+        print(f'Writing average-spectrum fit file: {spec_file}')
         mca_fit = McaTheory()
         conf = ConfigDict.ConfigDict()
         conf.read(config_file)
@@ -142,7 +132,7 @@ class xrfBatch():
         mca_fit.setData(self.xrf_avg)
         mca_fit.estimate()
         fit_result = mca_fit.startfit(digest=0)
-        digest_file = os.path.join(self.out_dir_spectrum + f'spectrum_{str(scan_nr).zfill(6)}_{self.channel}.fit')
+        digest_file = os.path.join(self.out_dir_spectrum + f'spectrum_{self.scan_list:04}_{self.channel}.fit')
         mca_fit_result = mca_fit.digestresult(outfile=digest_file)
         #ConfigDict.prtdict(mca_fit_result)
         with h5py.File(spec_file, 'w') as sfp:
@@ -205,24 +195,22 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     #Adding Nonoptional arguments
-    parser.add_argument('scan_nr')
+    parser.add_argument('scan_list')
     #Adding noptional arguments
-    parser.add_argument('--proposal','-p')
-    parser.add_argument('--visit','-v')
-    parser.add_argument('--config','-c')
+    parser.add_argument('--proposal','-p', type=int, help='Proposal, default get the current folder')
+    parser.add_argument('--visit'   ,'-v', type=int, help='Visit, default get from the current folder')
+    parser.add_argument('--config'  ,'-o', type=str, help='configuration file')
+    parser.add_argument('--calib'   ,'-c', type=str, help='calibration file')
     # read which scan to work on
     scan_nr = int(sys.argv[1])
+
+    args=parser.parse_args()
+
     t0 = time.time()
 
 
-    if len(sys.argv) >= 5:
-        proposal,visit =  getCurrentProposal(proposal=sys.argv[3],visit=sys.argv[4])
-    elif len(sys.argv) >= 4:
-        proposal,visit =  getCurrentProposal(proposal=sys.argv[3])
-
-    if len(sys.argv) >= 3:
-        config_file = sys.argv[2]
-
+    proposal,visit =  DM.getCurrentProposal(proposal=args.proposal,visit=args.visit)
+    config_file = sys.argv[2]
     session_path = sessionpath.format(proposal,visit)
 
     # create an instance of the fit class for each channel
@@ -230,7 +218,7 @@ if __name__ == "__main__":
     for channel in channels:
         fits[str(channel)] = xrfBatch(session_path = session_path, 
                                       sample_name  = sample_name, 
-                                      scan_nr      = scan_nr,
+                                      scan_list    = scan_list,
                                       config_file  = config_file,
                                       detector     = detector,
                                       channel      = channel)
