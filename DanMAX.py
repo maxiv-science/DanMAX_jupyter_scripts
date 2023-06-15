@@ -553,7 +553,7 @@ def makeMap(x, y, actualXsteps, nominalYsteps, signal):
     ZI = griddata((x.reshape(-1), y.reshape(-1)), signal.reshape(-1), (XI, YI), 'nearest')
     return ZI
 
-def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14478],proposal=None, visit=None):
+def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.01280573],proposal=None, visit=None):
     """Returns stitched XRF and XRD maps of multiple scans or a single scan 
     For a single scan it maps the x and y motor coordinates to the collected data
 
@@ -574,7 +574,7 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
     -scans: list of scans that needs to be stitched
     -XRF: import XRF data (default True)
     -XRF: import XRD data (default True)
-    -xrf_calibration: Calibration parameters for the rayspec_detector (calibration is np.range(4096)*xrf_calibration[0]-xrf_calibration[1]
+    -xrf_calibration: Calibration parameters for the rayspec_detector (calibration is np.range(4096)*xrf_calibration[1]-xrf_calibration[0]
     -proposal: select another proposal for testing
     -visit: select another visit for testing
     """
@@ -590,7 +590,11 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
         with h5py.File(fname,'r') as f:
             Emax = f['/entry/instrument/pilatus/energy'][()]*10**-3 # keV
             # Energy calibration (Conversion of chanels to energy)      
-            energy = np.arange(4096)*xrf_calibration[0]-xrf_calibration[1]
+            channels = np.arange(4096)
+            if len(xrf_calibration) ==2:
+                energy = channels*xrf_calibration[1]+xrf_calibration[0]
+            if len(xrf_calibration) ==3:
+                energy =(channels**2)*xrf_calibration[2]+channels*xrf_calibration[1]+xrf_calibration[0]
 
     for i,scan in enumerate(scans):
         print(f'scan-{scan} - {i+1} of {len(scans)}',end='\r')
@@ -654,6 +658,8 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
             yy_new = y
 
             #Reshape data to map dimensions
+            xx_new = xx_new.reshape((map_shape))
+            yy_new = yy_new.reshape((map_shape))
             if XRF:
                 xrf_map_new = S.reshape((map_shape[0],map_shape[1],S.shape[-1]))
             if XRD:
@@ -672,8 +678,8 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.01280573,-0.14
                 #For later iterations, find the overlap, and use only the newest data.
                 overlap = round(np.mean(xx[-1]-xx_new[0])/step_size)+1
                 # set the overlapping indices to the mean 
-                xx[-overlap:] = xx[-overlap:]   #(xx[-overlap:,:]+xx_new[:overlap,:])/2
-                yy[-overlap:] = yy[-overlap:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
+                xx[-overlap:,:] = xx[-overlap:,:]   #(xx[-overlap:,:]+xx_new[:overlap,:])/2
+                yy[-overlap:,:] = yy[-overlap:,:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
                 if XRF: 
                     xrf_map[-overlap:,:] = xrf_map[-overlap:,:,:] 
                 if XRD:
