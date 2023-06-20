@@ -561,11 +561,11 @@ def getXRFFitFilename(scans,proposal=None,visit=None, base_folder= None,channel=
     else:
         session_path = base_folder
     if len(scans) > 1:
-        scan_name=f'scan_{self.scans[0]:04}_to_{self.scans[-1]:04}'
+        scan_name=f'scan_{scans[0]:04}_to_{scans[-1]:04}'
     else:
-        scan_name=f'scan_{self.scans[0]:04}'
+        scan_name=f'scan_{scans[0]:04}'
 
-    fname = DM.findScan(int(scans[0]), proposal=proposal, visit=visit)
+    fname = findScan(int(scans[0]), proposal=proposal, visit=visit)
     idx = fname.split('/').index('danmax')
     sample_name = fname.split('/')[idx + 4]
     
