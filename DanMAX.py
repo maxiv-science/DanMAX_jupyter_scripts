@@ -553,7 +553,7 @@ def makeMap(x, y, actualXsteps, nominalYsteps, signal):
     ZI = griddata((x.reshape(-1), y.reshape(-1)), signal.reshape(-1), (XI, YI), 'nearest')
     return ZI
 
-def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.01280573],proposal=None, visit=None):
+def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.01280573], map_type=np.float32, proposal=None, visit=None):
     """Returns stitched XRF and XRD maps of multiple scans or a single scan 
     For a single scan it maps the x and y motor coordinates to the collected data
 
@@ -575,14 +575,10 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
     -XRF: import XRF data (default True)
     -XRF: import XRD data (default True)
     -xrf_calibration: Calibration parameters for the rayspec_detector (calibration is np.range(4096)*xrf_calibration[1]-xrf_calibration[0]
+    -map_type: The data type of the maps, reduce for lager data sets. Default is float32
     -proposal: select another proposal for testing
     -visit: select another visit for testing
     """
-
-    #Check if an output is expected
-    if not XRF and not XRD:
-        raise Exception('Neither XRF nor XRD map has been requested')
-
     if XRF:
         # import falcon x data
         fname = findScan(int(scans[0]), proposal=proposal, visit=visit)
@@ -630,10 +626,10 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
             #Normalize the data with I0 and get data shape, from either XRF or XRD data
             #To ensure to have it no matter which one is selected
             if XRF:
-                S = (S.T/I0).T.astype(np.uint32)
+                S = (S.T/I0).T.astype(map_type)
                 data_shape = S.shape[0]
             if XRD:
-                I = (I.T/I0).T.astype(np.uint32)
+                I = (I.T/I0).T.astype(map_type)
                 x_xrd = x_xrd[I[0,:]>0]
                 I = I[:,I[0,:]>0]
                 data_shape = I.shape[0]
@@ -649,8 +645,9 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
             map_shape = (len(M2[1]),len(M1[1]))
             #Check if that shape fits with the actual shape of the data
             #This will not always be the case, as different recording software records different things
-            if np.prod(map_shape) != np.prod(data_shape):
-                map_shape = (map_shape[0]-1,map_shape[1]-1)
+            if XRF or XRD:
+                if np.prod(map_shape) != np.prod(data_shape):
+                    map_shape = (map_shape[0]-1,map_shape[1]-1)
 
            
             # reshape x and y grids to the map dimensions
@@ -696,5 +693,7 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
         return xx,yy,xrf_map,energy,Emax,xrd_map,x_xrd,Q
     elif XRD:
         return xx,yy,xrd_map,x_xrd,Q
-    else:
+    elif XRF:
         return xx,yy,xrf_map,energy,Emax
+    else:
+        return xx,yy
