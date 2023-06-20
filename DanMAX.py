@@ -198,6 +198,39 @@ def getMetaDic(fname):
                     data[key] = f['/entry/instrument/'][key][k][:]
     return data
 
+def appendScans(scans):
+    """
+    Return appended arrays of the integrated diffraction data and meta data for several scans
+        Parameters
+            scans - list of scan numbers
+        Return
+            x - array
+            I - array
+            meta - dictionary
+            Q - bool
+    """
+    for i,scan in enumerate(scans):
+        fname = findScan(scan)
+        aname = getAzintFname(fname)
+        metadic = getMetaDic(fname)
+        ts = metadic['pcap_trigts']
+        with h5py.File(aname,'r') as f:
+            try:
+                x = f['q'][:]
+                Q = True
+            except KeyError:
+                x = f['2th'][:]
+                Q = False
+            y = f['I'][:]
+        if len(ts) < y.shape[0]:
+            print(f'Missing metadata in {fname}')
+            y = y[:len(ts)]
+        if i<1:
+            I = y.copy()
+            meta = metadic.copy()
+        I = np.append(I,y,axis=0)
+        meta = {key:np.append(meta[key],metadic[key]) for key in metadic}
+    return x,I,meta,Q
    
 def findAllScans(scan_type='any',descending=True,proposal=None,visit=None):
     """
