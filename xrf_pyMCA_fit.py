@@ -61,6 +61,15 @@ class xrfBatch():
         self.channel             = channel
         self.save_loc            = save_loc
         self.proposal,self.visit = DM.getCurrentProposal(proposal,visit)
+        
+        #Doing the following would be optimal, that way changes to this code should
+        #Not break jupyter compatibility
+        #Putting it off for now though
+        #Note that the function doesn't currently make all values, but  does create them
+        #internally
+        '''
+        self.sessioin_path, self.scan_name, self.sample_name, self.out_dir, self.elem_fit_name = DM.getXRFFitFilename(scan_list,proposal=proposal,visit=visit,base_folder=save_loc,channel=channel)
+        '''
 
         #overwriting sample name if an empty was given
         if session_path == None:
