@@ -228,8 +228,9 @@ def appendScans(scans):
         if i<1:
             I = y.copy()
             meta = metadic.copy()
-        I = np.append(I,y,axis=0)
-        meta = {key:np.append(meta[key],metadic[key]) for key in metadic}
+        else:
+            I = np.append(I,y,axis=0)
+            meta = {key:np.append(meta[key],metadic[key]) for key in metadic}
     return x,I,meta,Q
    
 def findAllScans(scan_type='any',descending=True,proposal=None,visit=None):
