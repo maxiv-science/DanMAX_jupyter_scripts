@@ -553,6 +553,28 @@ def makeMap(x, y, actualXsteps, nominalYsteps, signal):
     ZI = griddata((x.reshape(-1), y.reshape(-1)), signal.reshape(-1), (XI, YI), 'nearest')
     return ZI
 
+def getXRFFitFilename(scans,proposal=None,visit=None, base_folder= None,channel=0):
+
+    proposal,visit = getCurrentProposal(proposal,visit)
+    if base_folder == None:
+        session_path = f'/data/visitors/danmax/{proposal}/{visit}/'
+    else:
+        session_path = base_folder
+    if len(scans) > 1:
+        scan_name=f'scan_{self.scans[0]:04}_to_{self.scans[-1]:04}'
+    else:
+        scan_name=f'scan_{self.scans[0]:04}'
+
+    fname = DM.findScan(int(scans[0]), proposal=proposal, visit=visit)
+    idx = fname.split('/').index('danmax')
+    sample_name = fname.split('/')[idx + 4]
+    
+    xrf_out_dir = f'{session_path}process/xrf_fit/{sample_name}/{scan_name}/'
+    xrf_file_name = f'fitted_elements_{scan_name}_{channel}'
+    return xrf_out_dir, xrf_file_name
+
+ 
+
 def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.01280573], map_type=np.float32, proposal=None, visit=None):
     """Returns stitched XRF and XRD maps of multiple scans or a single scan 
     For a single scan it maps the x and y motor coordinates to the collected data
