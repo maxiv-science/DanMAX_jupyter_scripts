@@ -686,8 +686,6 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                 data_shape = S.shape[0]
             if XRD:
                 I = (I.T/I0).T.astype(map_type)
-                x_xrd = x_xrd[I[0,:]>0]
-                I = I[:,I[0,:]>0]
                 data_shape = I.shape[0]
 
             # get the motor names, nominal and registred positions
@@ -745,6 +743,9 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                 if XRD:
                     xrd_map = np.append(xrd_map,xrd_map_new[overlap:,:,:],axis=0)
     #Return maps depending on the requested data type
+    if XRD:
+        x_xrd = x_xrd[np.min(xrd_map>0,axis=(0,1))]
+        xrd_map = xrd_map[:,:,np.min(xrd_map>0,axis=(0,1))]
     if XRD and XRF:
         return xx,yy,xrf_map,energy,Emax,xrd_map,x_xrd,Q
     elif XRD:
