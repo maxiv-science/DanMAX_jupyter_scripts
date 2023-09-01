@@ -1,3 +1,8 @@
+
+f"""Methods for notebooks at the DanMAX beamline
+"""
+
+version = '1.1.0'
 import os
 import h5py
 import glob
@@ -10,6 +15,10 @@ import ipywidgets as ipyw
 import IPython
 from IPython.utils import io
 import fabio
+
+
+
+
 
 def reduceArray(a,reduction_factor):
     """Reduce the size of an array by step-wise averaging"""
@@ -277,6 +286,7 @@ def getVmax(im):
     Return vmax (int) corresponding to the first pixel value with zero counts
     after the maximum value
     """
+    im = im[~np.isnan(im)]
     h = np.histogram(im,bins=int(np.max(im)) ,range=(1,int(np.max(im))+1), density=False)
     first_zero = np.argmin(h[0][np.argmax(h[0]):])+np.argmax(h[0])
     return first_zero
@@ -719,3 +729,6 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
         return xx,yy,xrf_map,energy,Emax
     else:
         return xx,yy
+
+    
+print(f'DanMAX.py Version {version}')
