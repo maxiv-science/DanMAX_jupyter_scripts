@@ -124,7 +124,7 @@ class xrfBatch():
     # Reads a NanoMAX file
     def readData(self):
         self.x,self.y,self.xrf,self.energy, self.Emax, self.I0 = DM.stitchScans(self.scan_list,XRD=False,xrf_calibration = self.calibration,proposal=self.proposal,visit=self.visit) 
-        self.xrf /= self.I0
+        self.xrf = (self.xrf.transpose(2,0,1) /self.I0).transpose(1,2,0)
 #            self.xrf_norm = ((self.xrf*I0_scale_factor)/(self.I0*self.dwell))
         self.xrf_avg = numpy.nanmean(self.xrf,axis=(0,1))
 #            self.energy = fp['entry/snapshot/energy'][:]
