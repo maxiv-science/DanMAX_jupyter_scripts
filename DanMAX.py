@@ -619,7 +619,7 @@ def getXRFFitFilename(scans,proposal=None,visit=None, base_folder= None,channel=
 
  
 
-def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.01280573], map_type=np.float32, proposal=None, visit=None):
+def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.01280573], map_type=np.float32, proposal=None, visit=None,normI0=True):
     """Returns stitched XRF and XRD maps of multiple scans or a single scan 
     For a single scan it maps the x and y motor coordinates to the collected data
 
@@ -632,6 +632,7 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
     -xrd_map Diffraction intensity
     -x_xrd 2-theta or q for diffraction
     -Q Boolian, if true x_xrd is in q otherwise it is  2theta
+    -I0_s a map of I0
     
     Note that xrf_map, energy, and Emax are only returned if the input XRF == True (default)
     Note that xrd_map, x_xrd, and Q are only returned if the input XRD == True (default)
@@ -644,6 +645,7 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
     -map_type: The data type of the maps, reduce for lager data sets. Default is float32
     -proposal: select another proposal for testing
     -visit: select another visit for testing
+    -normI0 Boolean: If true I0 will be normalized after stitching.
     """
     if XRF:
         # import falcon x data
@@ -682,20 +684,17 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                     #I += np.mean(f['I'][:],axis=0)
                     I = f['I'][:]
             # import meta data and normalize to I0
-            meta = getMetaData(fname)
+            meta = getMetaData(fname,relative = False)
             I0 = meta['I0']
 
-            # Check if I0 exists
-            if I0 is None:
-                I0 = 1
             
             #Normalize the data with I0 and get data shape, from either XRF or XRD data
             #To ensure to have it no matter which one is selected
             if XRF:
-                S = (S.T/I0).T.astype(map_type)
+                S = S.T.T.astype(map_type)
                 data_shape = S.shape[0]
             if XRD:
-                I = (I.T/I0).T.astype(map_type)
+                I = I.T.T.astype(map_type)
                 data_shape = I.shape[0]
 
             # get the motor names, nominal and registred positions
@@ -714,9 +713,15 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                     map_shape = (map_shape[0]-1,map_shape[1]-1)
 
            
+            # Check if I0 exists
+            if I0 is None:
+                I0 = np.ones(map_shape)
+            else:
+                I0.reshape(map_shape)
             # reshape x and y grids to the map dimensions
             xx_new = x 
             yy_new = y
+            I0_new = I0
 
             #Reshape data to map dimensions
             xx_new = xx_new.reshape((map_shape))
@@ -729,6 +734,7 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                 #If its the first iteration, create temporary variables, and find the overlap
                 xx = xx_new
                 yy = yy_new
+                I0_s = I0_new
                 if XRF:
                     xrf_map = xrf_map_new
                 if XRD:
@@ -741,6 +747,7 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                 # set the overlapping indices to the mean 
                 xx[-overlap:,:] = xx[-overlap:,:]   #(xx[-overlap:,:]+xx_new[:overlap,:])/2
                 yy[-overlap:,:] = yy[-overlap:,:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
+                I0_s[-overlap:,:] = I0_s[-overlap:,:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
                 if XRF: 
                     xrf_map[-overlap:,:] = xrf_map[-overlap:,:,:] 
                 if XRD:
@@ -748,22 +755,25 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                 # append the new values
                 xx = np.append(xx,xx_new[overlap:],axis=0)
                 yy = np.append(yy,yy_new[overlap:],axis=0)
+                I0_s = np.append(I0_s,I0_new[overlap:],axis=0)
                 if XRF:
                     xrf_map = np.append(xrf_map,xrf_map_new[overlap:,:,:],axis=0)
                 if XRD:
                     xrd_map = np.append(xrd_map,xrd_map_new[overlap:,:,:],axis=0)
     #Return maps depending on the requested data type
+    if normI0:
+        I0_s /=np.max(I0_s)
     if XRD:
         x_xrd = x_xrd[np.min(xrd_map>0,axis=(0,1))]
         xrd_map = xrd_map[:,:,np.min(xrd_map>0,axis=(0,1))]
     if XRD and XRF:
-        return xx,yy,xrf_map,energy,Emax,xrd_map,x_xrd,Q
+        return xx,yy,xrf_map,energy,Emax,xrd_map,x_xrd,Q,I0_s
     elif XRD:
-        return xx,yy,xrd_map,x_xrd,Q
+        return xx,yy,xrd_map,x_xrd,Q,I0_s
     elif XRF:
-        return xx,yy,xrf_map,energy,Emax
+        return xx,yy,xrf_map,energy,Emax,I0_s
     else:
-        return xx,yy
+        return xx,yy,I0_s
 
     
 print(f'DanMAX.py Version {version}')
