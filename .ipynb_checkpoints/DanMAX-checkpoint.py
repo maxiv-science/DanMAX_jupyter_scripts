@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '1.1.0'
+version = '1.2.0'
 import os
 import h5py
 import glob
@@ -15,7 +15,7 @@ import ipywidgets as ipyw
 import IPython
 from IPython.utils import io
 import fabio
-
+from pyFAI import geometry
 
 
 
@@ -207,6 +207,40 @@ def getMetaDic(fname):
                     data[key] = f['/entry/instrument/'][key][k][:]
     return data
 
+def appendScans(scans):
+    """
+    Return appended arrays of the integrated diffraction data and meta data for several scans
+        Parameters
+            scans - list of scan numbers
+        Return
+            x - array
+            I - array
+            meta - dictionary
+            Q - bool
+    """
+    for i,scan in enumerate(scans):
+        fname = findScan(scan)
+        aname = getAzintFname(fname)
+        metadic = getMetaDic(fname)
+        ts = metadic['pcap_trigts']
+        with h5py.File(aname,'r') as f:
+            try:
+                x = f['q'][:]
+                Q = True
+            except KeyError:
+                x = f['2th'][:]
+                Q = False
+            y = f['I'][:]
+        if len(ts) < y.shape[0]:
+            print(f'Missing metadata in {fname}')
+            y = y[:len(ts)]
+        if i<1:
+            I = y.copy()
+            meta = metadic.copy()
+        else:
+            I = np.append(I,y,axis=0)
+            meta = {key:np.append(meta[key],metadic[key]) for key in metadic}
+    return x,I,meta,Q
    
 def findAllScans(scan_type='any',descending=True,proposal=None,visit=None):
     """
@@ -377,6 +411,8 @@ def singlePeakFit(x,y):
 
     amp,pos,fwhm,bgr = popt
     sigma = fwhm/(2*np.sqrt(2*np.log(2)))
+    integral = np.sqrt(2*np.pi)*amp*np.abs(sigma)
+    
     y_calc = gauss(x,amp,pos,fwhm,bgr)
     
     return amp,pos,fwhm,bgr,y_calc
@@ -521,8 +557,70 @@ def integrateFile(fname, config,embed_meta_data=False):
                 if sigma is not None:
                     sigma_dset[i] = sigma
         progress.value = i+1
+
+
+def integrateImage(im, config):
+    """
+    DanMAX integration function
+    Uses the python implementation of MATFRAIA to azimuthally integrate an image
+    Parameters:
         
-        
+        im                     : numpy array
+        config = {
+            poni_file          : Absolute path for the poni file 
+            mask               : Absolute path for the mask file in .npy format 
+            radial_bins        : Number of radial bins
+            azimuthal_bins     : Number of azimuthal bins - See note below 
+            unit               : "q" or "2th" 
+            n_splitting        : Number of sub-pixel splitting used. The actual number of sub-pixels is N^2.
+            polarization_factor: Polarization factor, should be very close to (but slightly lower than) 1.
+            }
+    More information about the integration can be found here:
+    https://wiki.maxiv.lu.se/index.php/DanMAX:Pilatus_2M_CdTe#Live_azimuthal_integration_GUI
+    
+    """
+    # set locked config parameters
+    config=config.copy()
+    config['error_model'] = None
+    config['pixel_size'] = 172.0e-6
+    config['shape'] = (1679, 1475)
+    # read the mask file
+    if type(config['mask'])==str:
+        mask_fname = config['mask']
+        if mask_fname.endswith('.npy'):
+            config['mask'] = np.load(mask_fname)
+        else:
+            config['mask'] = fabio.open(mask_fname).data 
+    
+    # check whether binned integration should be used
+    azi_bins = config['azimuth_bins']
+    binned = type(azi_bins) != type(None)
+    if type(azi_bins) == int:
+        # convert integer to array of bin boundaries
+        azi_bins = np.linspace(0,360,azi_bins+1)
+    
+    # initialize the AzimuthalIntegrator
+    ai = AzimuthalIntegrator(**config)
+    x = ai.radial_axis
+    if binned:
+        azi_cen = ai.azimuth_axis
+        azi_edge = azi_bins
+    if len(im.shape)==2:
+        I, sigma = ai.integrate(im)
+    else:
+        I, sigma = [],[]
+        for im_i in im:
+            y , e = ai.integrate(im_i)
+            I.append(y)
+            sigma.append(e)
+        I = np.array(I)
+        sigma = np.array(sigma)
+    if binned:
+        return x, I, sigma, azi_cen, azi_edge
+    else:
+        return x, I, sigma
+
+
 def getMotorSteps(fname,proposal=None,visit=None):
     """
     Return motor name(s), nominal positions, and registred positions for a given scan.
@@ -583,9 +681,8 @@ def getXRFFitFilename(scans,proposal=None,visit=None, base_folder= None,channel=
     xrf_file_name = f'fitted_elements_{scan_name}_{channel}'
     return xrf_out_dir, xrf_file_name
 
- 
 
-def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.01280573], map_type=np.float32, proposal=None, visit=None):
+def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.01280573], map_type=np.float32, proposal=None, visit=None,normI0=True):
     """Returns stitched XRF and XRD maps of multiple scans or a single scan 
     For a single scan it maps the x and y motor coordinates to the collected data
 
@@ -598,6 +695,7 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
     -xrd_map Diffraction intensity
     -x_xrd 2-theta or q for diffraction
     -Q Boolian, if true x_xrd is in q otherwise it is  2theta
+    -I0_s a map of I0
     
     Note that xrf_map, energy, and Emax are only returned if the input XRF == True (default)
     Note that xrd_map, x_xrd, and Q are only returned if the input XRD == True (default)
@@ -610,12 +708,14 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
     -map_type: The data type of the maps, reduce for lager data sets. Default is float32
     -proposal: select another proposal for testing
     -visit: select another visit for testing
+    -normI0 Boolean: If true I0 will be normalized after stitching.
     """
-    if XRF:
-        # import falcon x data
-        fname = findScan(int(scans[0]), proposal=proposal, visit=visit)
+    
+    fname = findScan(int(scans[0]), proposal=proposal, visit=visit)
 
-        with h5py.File(fname,'r') as f:
+    with h5py.File(fname,'r') as f:
+        if XRF:
+            # import falcon x data
             Emax = f['/entry/instrument/pilatus/energy'][()]*10**-3 # keV
             # Energy calibration (Conversion of chanels to energy)      
             channels = np.arange(4096)
@@ -623,7 +723,11 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                 energy = channels*xrf_calibration[1]+xrf_calibration[0]
             if len(xrf_calibration) ==3:
                 energy =(channels**2)*xrf_calibration[2]+channels*xrf_calibration[1]+xrf_calibration[0]
-
+        try:
+            snake = f['/entry/snake'][()]
+        except KeyError:
+            snake = False
+            
     for i,scan in enumerate(scans):
         print(f'scan-{scan} - {i+1} of {len(scans)}',end='\r')
         # print statements are suppressed within the following context
@@ -633,7 +737,6 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
             if XRF:        
                 with h5py.File(fname,'r') as f:
                     S = f['/entry/instrument/falconx/data'][:]
-            
                 S = S[:,energy<Emax*1.1]
             if XRD:
                 # import azimuthally integrated data
@@ -648,22 +751,17 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                     #I += np.mean(f['I'][:],axis=0)
                     I = f['I'][:]
             # import meta data and normalize to I0
-            meta = getMetaData(fname)
+            meta = getMetaData(fname,relative = False)
             I0 = meta['I0']
 
-            # Check if I0 exists
-            if I0 is None:
-                I0 = 1
             
             #Normalize the data with I0 and get data shape, from either XRF or XRD data
             #To ensure to have it no matter which one is selected
             if XRF:
-                S = (S.T/I0).T.astype(map_type)
+                S = S.T.T.astype(map_type)
                 data_shape = S.shape[0]
             if XRD:
-                I = (I.T/I0).T.astype(map_type)
-                x_xrd = x_xrd[I[0,:]>0]
-                I = I[:,I[0,:]>0]
+                I = I.T.T.astype(map_type)
                 data_shape = I.shape[0]
 
             # get the motor names, nominal and registred positions
@@ -682,9 +780,15 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                     map_shape = (map_shape[0]-1,map_shape[1]-1)
 
            
+            # Check if I0 exists
+            if I0 is None:
+                I0 = np.ones(map_shape)
+            else:
+                I0 = I0.reshape(map_shape)
             # reshape x and y grids to the map dimensions
             xx_new = x 
             yy_new = y
+            I0_new = I0
 
             #Reshape data to map dimensions
             xx_new = xx_new.reshape((map_shape))
@@ -697,6 +801,7 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                 #If its the first iteration, create temporary variables, and find the overlap
                 xx = xx_new
                 yy = yy_new
+                I0_s = I0_new
                 if XRF:
                     xrf_map = xrf_map_new
                 if XRD:
@@ -709,6 +814,7 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                 # set the overlapping indices to the mean 
                 xx[-overlap:,:] = xx[-overlap:,:]   #(xx[-overlap:,:]+xx_new[:overlap,:])/2
                 yy[-overlap:,:] = yy[-overlap:,:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
+                I0_s[-overlap:,:] = I0_s[-overlap:,:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
                 if XRF: 
                     xrf_map[-overlap:,:] = xrf_map[-overlap:,:,:] 
                 if XRD:
@@ -716,19 +822,83 @@ def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.012805
                 # append the new values
                 xx = np.append(xx,xx_new[overlap:],axis=0)
                 yy = np.append(yy,yy_new[overlap:],axis=0)
+                I0_s = np.append(I0_s,I0_new[overlap:],axis=0)
                 if XRF:
                     xrf_map = np.append(xrf_map,xrf_map_new[overlap:,:,:],axis=0)
                 if XRD:
                     xrd_map = np.append(xrd_map,xrd_map_new[overlap:,:,:],axis=0)
+    
+    if snake:
+        print('Treating data as snake maps --- flipping every other line')
+        # if data are measured as "snake" format, flip every second line
+        if XRD:
+            xrd_map[1::2,:,:] = xrd_map[1::2,::-1,:]
+        if XRF:
+            xrf_map[1::2,:,:] = xrf_map[1::2,::-1,:]
+        yy[1::2,:] = yy[1::2,::-1]
+        I0_s[1::2,:] = I0_s[1::2,::-1]
+ 
+    
     #Return maps depending on the requested data type
+    if normI0:
+        I0_s /=np.max(I0_s)
+    if XRD:
+        x_xrd = x_xrd[np.min(xrd_map>0,axis=(0,1))]
+        xrd_map = xrd_map[:,:,np.min(xrd_map>0,axis=(0,1))]
     if XRD and XRF:
-        return xx,yy,xrf_map,energy,Emax,xrd_map,x_xrd,Q
+        return xx,yy,xrf_map,energy,Emax,xrd_map,x_xrd,Q,I0_s
     elif XRD:
-        return xx,yy,xrd_map,x_xrd,Q
+        return xx,yy,xrd_map,x_xrd,Q,I0_s
     elif XRF:
-        return xx,yy,xrf_map,energy,Emax
+        return xx,yy,xrf_map,energy,Emax,I0_s
     else:
-        return xx,yy
+        return xx,yy,I0_s
+
+  
+    
+def getPixelCoords(pname,danmax_convention=True,corners=False):
+    """
+    Return the pixel coordinates in meter for a given PONI configuration
+    
+    Parameters:
+        pname             - PONI file path
+        danmax_convention - (default=True) return the coordinates in the danmax laboratory convention,
+                            otherwise use the default PyFAI convention
+        corners           - (default=False) If True, return the coordinates of the pixel corners rather then the centers
+    Return:
+        xyz - (danmax) numpy array of shape [(x,y,z),h,w] - Index [:,0,0] corresponds to the top left corner of the detector image
+        OR
+        xyz - (danmax,corners) numpy array of shape [(x,y,z),h+1,w+1] - Index [:,0,0] corresponds to the top left corner of the detector image
+        OR
+        xyz - (PyFAI) numpy array of shape [h,w,(z,y,x)] *see help(pyFAI.geometry.core.Geometry.position_array)
+    """
+    # read PONI and get xyz positions (in m)
+    poni = geometry.core.ponifile.PoniFile(pname).as_dict()
+    geo = geometry.core.Geometry(**{key:poni[key] for key in ['dist', 'poni1', 'poni2', 'rot1', 'rot2', 'rot3','detector','wavelength']}) 
+    xyz = geo.position_array(corners=corners)
+    if danmax_convention:
+        if not corners:
+            # convert to danmax convention NOTE: Might need to be flipped/rotated
+            # [h,w,(z,y,x)] --> [(x,y,z),h,w] 
+            xyz = np.transpose(xyz,axes=(2,0,1))[[2,1,0],:,:]
+            xyz[[0,1]] *= -1
+        else:
+            # [h,w,4,(z,y,x)] --> [(x,y,z),(ul,ll,ur,lr),h,w] 
+            xyz_c = np.transpose(xyz,axes=(3,2,0,1))[[2,1,0],:,:,:]
+            xyz_c[[0,1]] *= -1
+
+            #[(x,y,z),h+1,w+1] 
+            xyz = np.full((3,xyz_c.shape[2]+1,xyz_c.shape[3]+1)
+                        ,0.)
+            # upper left
+            xyz[:,:-1,:-1] = xyz_c[:,0,:,:]
+            # lower left
+            xyz[:,-1,:-1] = xyz_c[:,1,-1,:]
+            # upper rigth
+            xyz[:,:-1,-1] = xyz_c[:,2,:,-1]
+            # lower right
+            xyz[:,-1,-1] = xyz_c[:,3,-1,-1]
+    return xyz
 
     
 print(f'DanMAX.py Version {version}')
