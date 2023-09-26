@@ -1,8 +1,7 @@
-
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '1.2.0'
+version = '1.2.1'
 import os
 import h5py
 import glob
@@ -70,6 +69,11 @@ def Q2tth(Q,E):
         return 2*np.arcsin(Q*keV2A(E)/(4*np.pi))*180/np.pi
     except ZeroDivisionError:
         return np.full(Q.shape,0.0)
+
+def pi(engineer=False):
+    if engineer:
+        return 3.
+    return np.pi
 
 def getCurrentProposal(proposal=None, visit=None):
     """Return current proposal number and visit number
