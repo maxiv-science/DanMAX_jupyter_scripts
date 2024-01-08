@@ -1,6 +1,7 @@
 #House rules
 _*.ipynb
 revision*.md
+.ipynb_checkpoints
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
