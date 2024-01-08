@@ -1,30 +1,76 @@
+
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '1.2.1'
+version = '2.0.0'
+
+#use_dark_mode = True
 import os
 import h5py
 import glob
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+from cycler import cycler
 import scipy.optimize as sci_op
 import scipy.constants as sci_const
-from azint import AzimuthalIntegrator
-import ipywidgets as ipyw
-import IPython
 from IPython.utils import io
-import fabio
-from pyFAI import geometry
+from datetime import datetime
+try:
+    from ipywidgets import interact
+    from pyFAI import geometry
+    import pytz
+except:
+    print('Change to HDF5 server to load all modules')
 
-
-
-
-def reduceArray(a,reduction_factor):
+# Importing DanMAX libraries for specialized functionality
+# Done in try statements to catch different jupyter environments
+try:
+    import lib.mapping as mapping
+except:
+    print('Change to HDF5 server to load all modules')
+try:
+    import lib.texture as texture
+except:
+    print('Change to HDF5 server to load all modules')
+try:
+    import lib.integration as integration
+except:
+    print('Change to HDF5 server to load all modules')
+try:
+    import lib.parallel as parallel
+except:
+    print('Change to HDF5 server to load all modules')
+    
+def reduceArray(a,reduction_factor, axis=0):
     """Reduce the size of an array by step-wise averaging"""
+    if a is None:
+        return None
+    if axis!=0:
+        a = np.swapaxes(a,0,axis)
     step = reduction_factor
     last_index = a.shape[0]-step
     a = np.mean([a[i:last_index+i+1:step] for i in range(reduction_factor)],axis=0)
+    if axis!=0:
+        a = np.swapaxes(a,0,axis)
     return a
+
+def reduceDic(d ,reduction_factor=1, start=None, end=None, axis=0, keys=[],copy_dic=True):
+    """Reduce the size of the specified arrays in a dictionary by step-wise averaging"""
+    default_keys = ['I', 'cake', 'I_error', 'cake_error','I0', 'time', 'temp', 'energy']
+    keys = list(set(default_keys+keys))
+    index = np.s_[start:end]
+    if reduction_factor==1 and start is None and end is None:
+        return d
+    if copy_dic:
+        d = d.copy()
+    for key in keys:
+        if key in d.keys() and not d[key] is None:
+            if reduction_factor>1:
+                d[key] = reduceArray(d[key][index],reduction_factor,axis=axis)
+            else:
+                d[key] = d[key][index]
+    return d
+
 
 def keV2A(E):
     """Convert keV to Angstrom"""
@@ -74,6 +120,16 @@ def pi(engineer=False):
     if engineer:
         return 3.
     return np.pi
+
+def getTimeStamps(ts):
+    """Convert an array of absolute utc timestamps to an array of readable string timestamps (yyyy-mm-dd HH:MM:SS.ffffff)"""
+    timezone = pytz.timezone('Europe/Stockholm')
+    if np.isscalar(ts):
+        ts = np.array([ts])
+    # set offset (daylight saving) based on first index
+    offsetTZ = timezone.localize(datetime.utcfromtimestamp(t[0])).utcoffset()
+    ts = np.array([f'{datetime.utcfromtimestamp(t)+offsetTZ}' for t in ts])
+    return ts
 
 def getCurrentProposal(proposal=None, visit=None):
     """Return current proposal number and visit number
@@ -146,11 +202,16 @@ def getAzintFname(fname):
     except OSError as err:
         print(err.strerror)
 
-def getMetaData(fname,custom_keys=[],relative=True,proposal=None,visit=None):
+def getMetaData(fname,custom_keys={},relative=True,proposal=None,visit=None):
     """
     Return dictionary of selected meta data. Return {key:None} if key is not available.
-    Use custom_keys to provide a list of custom keys for additional parameters. Should include the full .h5 path.
-    Ex. custom_keys = ['entry/instrument/hex_x/value','entry/instrument/hex_y/value']
+    Use custom_keys to provide a dictionary of custom keys for additional parameters, where 
+    the key will be inherited by the returned dictionary and the value is the full .h5 path.
+    Example: 
+        custom_keys = {'hex_x':'entry/instrument/hex_x/value',
+                       'hex_y':'entry/instrument/hex_y/value',
+                       }
+    
     Default keys:
         I0
         time
@@ -195,7 +256,11 @@ def getMetaData(fname,custom_keys=[],relative=True,proposal=None,visit=None):
             print('No cryo stream temperature available')
         for key in custom_keys:
             try:
-                data[key] = f[key][:]
+                # check if value is a scalar
+                if len(f[custom_keys[key]].shape)==0:
+                    data[key] = f[custom_keys[key]][()]
+                else:
+                    data[key] = f[custom_keys[key]][:]
             except KeyError:
                 data[key] = None
                 print(f'{key} not available')
@@ -211,41 +276,48 @@ def getMetaDic(fname):
                     data[key] = f['/entry/instrument/'][key][k][:]
     return data
 
-def appendScans(scans):
+
+def appendScans(scans,
+                xrd_range=None,
+                azi_range=None,
+                proposal=None,
+                visit=None,):
     """
     Return appended arrays of the integrated diffraction data and meta data for several scans
         Parameters
             scans - list of scan numbers
+            xrd_range - list/tuple of min/max in scattering direction
+            azi_range - list/tuple of min/max in azimuthal direction
+            proposal - int, proposal to load from
+            vist - int, visit to load from
         Return
-            x - array
-            I - array
+            data - dictionary
             meta - dictionary
-            Q - bool
     """
     for i,scan in enumerate(scans):
-        fname = findScan(scan)
+        fname = findScan(scan,proposal=proposal,visit=visit)
         aname = getAzintFname(fname)
         metadic = getMetaDic(fname)
         ts = metadic['pcap_trigts']
-        with h5py.File(aname,'r') as f:
-            try:
-                x = f['q'][:]
-                Q = True
-            except KeyError:
-                x = f['2th'][:]
-                Q = False
-            y = f['I'][:]
-        if len(ts) < y.shape[0]:
+        
+        datadic = getAzintData(aname,xrd_range=xrd_range,azi_range=azi_range,proposal=proposal,visit=visit)
+        
+        if len(ts) != datadic['I'].shape[0]:
             print(f'Missing metadata in {fname}')
-            y = y[:len(ts)]
+            datadic['I'] = datadic['I'][:len(ts)]
+            if type(datadic['cake']) != type(None):
+                datadic['cake'] = datadic['cake'][:len(ts)]
         if i<1:
-            I = y.copy()
+            data = datadic.copy()
             meta = metadic.copy()
         else:
-            I = np.append(I,y,axis=0)
+            for key in ['I','cake']:
+                if type(datadic[key]) != type(None):
+                    data[key] = np.append(data[key],datadic[key],axis=0)
             meta = {key:np.append(meta[key],metadic[key]) for key in metadic}
-    return x,I,meta,Q
-   
+    return data, meta
+
+
 def findAllScans(scan_type='any',descending=True,proposal=None,visit=None):
     """
     Return a sorted list of all scans in the current visit
@@ -261,9 +333,11 @@ def findAllScans(scan_type='any',descending=True,proposal=None,visit=None):
     return files
 
 
-def findScan(scan_id,proposal=None,visit=None):
-    """Return the path of a specified scan number"""
-    if type(scan_id) == int:
+def findScan(scan_id=None,proposal=None,visit=None):
+    """Return the path of a specified scan number. If no scan number is specified, return latest scan"""
+    if scan_id == None:
+        return getLatestScan()
+    elif type(scan_id) == int:
         scan_id = f'scan-{scan_id:04d}'
     elif type(scan_id) == str:
         scan_id = 'scan-'+scan_id.strip().split('scan-')[-1][:4]
@@ -287,6 +361,7 @@ def getScanType(fname,proposal=None,visit=None):
             return scan_type
         except KeyError:
             print('No entry title available')
+            return 'None'
 
 def getExposureTime(fname,proposal=None,visit=None):
     """Return the exposure time in seconds as determined from the scan type"""
@@ -304,20 +379,6 @@ def getExposureTime(fname,proposal=None,visit=None):
 def getScan_id(fname):
     """Return the scan_id from a full file path"""
     return 'scan-'+fname.strip().split('scan-')[-1][:4]
-# def getVmax(im, percentile=99., bins=1000):
-    # """
-    # Return vmax (float) corresponding to the largest value
-    # within a defined percentile of the cumulative histogram
-    # """
-    # limit = percentile/100
-    # # close any open pyplot instance
-    # plt.close()
-    # # get image histogram
-    # h = plt.hist(im[im>0],bins=bins, density=True, cumulative=True)
-    # vargmax = np.argmax(h[0][h[0]<limit])
-    # vmax = h[1][vargmax]
-    # plt.close()
-    # return vmax
     
 def getVmax(im):
     """
@@ -377,7 +438,7 @@ def getHottestPixel(fname):
     return cps
 
         
-def singlePeakFit(x,y):
+def singlePeakFit(x,y,verbose=True):
     """
     Performe a single peak gaussian fit
     Return: amplitude, position, FWHM, background, y_calc
@@ -409,7 +470,8 @@ def singlePeakFit(x,y):
                                      y,
                                      p0=[amp,pos,fwhm,bgr])
     except RuntimeError:
-        print('sum(X) fit did not converge!')
+        if verbose:
+            print('sum(X) fit did not converge!')
         convergence = False
         popt = [np.nan]*4
 
@@ -435,211 +497,59 @@ def sampleDisplacementCorrection(tth,sdd,d):
     corr = np.arctan(d*np.sin(2*tth*np.pi/180)/(2*(sdd-d*np.sin(tth*np.pi/180)**2)))*180/np.pi
     return corr
 
+def edges(x):
+    """Return the bin edges for equidistant bin centers"""
+    dx = np.mean(np.diff(x))
+    return np.append(x,x[-1]+dx)-dx/2
 
-def integrateFile(fname, config,embed_meta_data=False):
+def rebin_1d(x,y,bins=None):
     """
-    DanMAX integration function
-    Uses the python implementation of MATFRAIA to azimuthally integrate a /raw/SAMPLE/_pilatus.h5 file
-    and save the integrated data in a corresponding /process/azint/SAMPLE/_pilatus_integrated.h5 file.
-    Parameters:
-        
-        fname     : Absolute path for the master h5 file
-        config = {
-            poni_file          : Absolute path for the poni file 
-            mask               : Absolute path for the mask file in .npy format 
-            radial_bins        : Number of radial bins
-            azimuthal_bins     : Number of azimuthal bins - See note below 
-            unit               : "q" or "2th" 
-            n_splitting        : Number of sub-pixel splitting used. The actual number of sub-pixels is N^2.
-            polarization_factor: Polarization factor, should be very close to (but slightly lower than) 1.
-            }
-    More information about the integration can be found here:
-    https://wiki.maxiv.lu.se/index.php/DanMAX:Pilatus_2M_CdTe#Live_azimuthal_integration_GUI
-    
-    ## Note on azimuthal bins ##
-    
-    If azimuthal bins are used, the integrated data will be saved in **/process/azint_binned/**/
-    The azimuthal integration direction is clockwise with origin in the inboard horizontal axis ("3 o'clock"). The azimuthal bins
-    can be specified in several ways:
-    int Number of bins out of the full 360° azimuthal range.
-    np.linspace() or np.arange() Array of equidistant interval values in °, e.g np.arange(180,361,1) gives 180 1° bins from
-    180°-360° with bin centers at [180.5, 181.5, .., 359.5]. 
-    numpy array Array of arbitrary bin interval values in °, e.g. np.array([0,180,260,280,360]) will result in four bins of
-    varying size: [0°-180°], [180°-260°], [260°-280°], and [280°-360°].
-    
-    NB: The intervals should be of ascending order. This is easily achieved with np.sort(). The integration does not wrap around
-    360°, however %360 can be used to mitigate that, provided that zero is one of the bin bounds.
-    
-    Example:
-    # make an interval that is symmetric around the vertical axis
-    step, pad = 5,30
-    bin_bounds = np.arange(180.-pad,360.+pad+step,step)%360
-    bin_bounds = np.append(bin_bounds,360)
-    bin_bounds.sort()
-    
+    Re-bin non-equidistant data to equidistant data
+        parameters
+            x     - Original non-equidistant x-values (m)
+            y     - Original non-equidistant y-values (n,m) or (m)
+            bins  - (optional) Target equidistant bins
+                     if not provided, bins will be generated
+                     from x.min() to x.max() with shape (m)
+        return
+            bins  - Equidistant bins (k)
+            y_bin - Binned y-values. Empty bins are filled
+                    by linear interpolation. (n,k) or (1,k)
     """
-    # set locked config parameters
-    config=config.copy()
-    config['error_model'] = None
-    config['pixel_size'] = 172.0e-6
-    config['shape'] = (1679, 1475)
-    # read the mask file
-    if type(config['mask'])==str:
-        mask_fname = config['mask']
-        if mask_fname.endswith('.npy'):
-            config['mask'] = np.load(mask_fname)
-        else:
-            config['mask'] = fabio.open(mask_fname).data 
-    
-    # check whether binned integration should be used
-    azi_bins = config['azimuth_bins']
-    binned = type(azi_bins) != type(None)
-    if type(azi_bins) == int:
-        # convert integer to array of bin boundaries
-        azi_bins = np.linspace(0,360,azi_bins+1)
-    
-    # initialize the AzimuthalIntegrator
-    ai = AzimuthalIntegrator(**config)
-    
-    # HDF5 dataset entry path
-    dset_name = '/entry/instrument/pilatus/data'
-
-    # read the meta data form the .h5 master file
-    meta = getMetaDic(fname)
-    
-    # prepared output path and filename
-    if binned:
-        output_fname = fname.replace('raw', 'process/azint_binned').replace('.h5','_pilatus_integrated.h5')
-    else:
-        output_fname = fname.replace('raw', 'process/azint').replace('.h5','_pilatus_integrated.h5')
-    output_folder = os.path.split(output_fname)[0]
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-
-    # write to output file
-    with h5py.File(output_fname,'w') as fi:
-        # write the integration configuration information to the output file
-        fi.create_dataset(ai.unit, data=ai.radial_axis)
-        if binned:
-            # bin centers
-            fi.create_dataset('phi', data=ai.azimuth_axis)
-            fi.create_dataset('bin_bounds', data=azi_bins)
-        
-        with open(config['poni_file'], 'r') as poni:
-            p = fi.create_dataset('poni_file', data=poni.read())
-            p.attrs['filename'] = config['poni_file']
-        fi.create_dataset('mask_file', data=mask_fname)
-        polarization_factor = config['polarization_factor'] 
-        data = polarization_factor if polarization_factor is not None else 0
-        fi.create_dataset('polarization_factor', data=data)
-        
-        if embed_meta_data:
-            # write meta data to the _pilatus_integrated.h5 file
-            for key in meta.keys():
-                fi.create_dataset(key,data=meta[key])
-        
-        # read the detector images from the _pilatus.h5 file
-        with h5py.File(fname.replace('.h5','_pilatus.h5'),'r') as fp:
-            images = fp[dset_name]
-            # display progress bar
-            fname_widget = ipyw.Text(value = 'Integrating file: %s' %os.path.split(fname)[1])
-            progress = ipyw.IntProgress(min=0, max=len(images))
-            IPython.display.display(fname_widget)
-            IPython.display.display(progress,display_id='prog_bar')
-
-            # prepare the HDF5 dataset for the integrated data
-            shape = (len(images), *ai.output_shape)
-            I_dset = fi.create_dataset('I', shape=shape, dtype=np.float32)
-            if ai.error_model == 'poisson':
-                sigma_dset = fi.create_dataset('sigma', shape=shape, dtype=np.float32)
-
-            for i, img in enumerate(images):
-                if i % 10 == 0:
-                    progress.value = i
-                I, sigma = ai.integrate(img)
-                I_dset[i] = I
-                if sigma is not None:
-                    sigma_dset[i] = sigma
-        progress.value = i+1
-
-
-def integrateImage(im, config):
-    """
-    DanMAX integration function
-    Uses the python implementation of MATFRAIA to azimuthally integrate an image
-    Parameters:
-        
-        im                     : numpy array
-        config = {
-            poni_file          : Absolute path for the poni file 
-            mask               : Absolute path for the mask file in .npy format 
-            radial_bins        : Number of radial bins
-            azimuthal_bins     : Number of azimuthal bins - See note below 
-            unit               : "q" or "2th" 
-            n_splitting        : Number of sub-pixel splitting used. The actual number of sub-pixels is N^2.
-            polarization_factor: Polarization factor, should be very close to (but slightly lower than) 1.
-            }
-    More information about the integration can be found here:
-    https://wiki.maxiv.lu.se/index.php/DanMAX:Pilatus_2M_CdTe#Live_azimuthal_integration_GUI
-    
-    """
-    # set locked config parameters
-    config=config.copy()
-    config['error_model'] = None
-    config['pixel_size'] = 172.0e-6
-    config['shape'] = (1679, 1475)
-    # read the mask file
-    if type(config['mask'])==str:
-        mask_fname = config['mask']
-        if mask_fname.endswith('.npy'):
-            config['mask'] = np.load(mask_fname)
-        else:
-            config['mask'] = fabio.open(mask_fname).data 
-    
-    # check whether binned integration should be used
-    azi_bins = config['azimuth_bins']
-    binned = type(azi_bins) != type(None)
-    if type(azi_bins) == int:
-        # convert integer to array of bin boundaries
-        azi_bins = np.linspace(0,360,azi_bins+1)
-    
-    # initialize the AzimuthalIntegrator
-    ai = AzimuthalIntegrator(**config)
-    x = ai.radial_axis
-    if binned:
-        azi_cen = ai.azimuth_axis
-        azi_edge = azi_bins
-    if len(im.shape)==2:
-        I, sigma = ai.integrate(im)
-    else:
-        I, sigma = [],[]
-        for im_i in im:
-            y , e = ai.integrate(im_i)
-            I.append(y)
-            sigma.append(e)
-        I = np.array(I)
-        sigma = np.array(sigma)
-    if binned:
-        return x, I, sigma, azi_cen, azi_edge
-    else:
-        return x, I, sigma
-
+    # unless provided, generate equidistant bin centers from x.min() to x.max()
+    if bins is None:
+        bins = np.linspace(x.min(),x.max(),x.shape[0])
+    # calculate bin edges assuming equidistant bins
+    bins_edge = edges(bins)
+    y_shape = y.shape
+    y = np.atleast_2d(y)
+    # re-bin data
+    bin_res = binned_statistic(x,y,bins=bins_edge, statistic='mean')
+    y_bin = bin_res.statistic
+    # fill empty bins by interpolation
+    for i,y in enumerate(y_bin):
+        y_bin[i] = np.interp(bins,bins[~np.isnan(y)],y[~np.isnan(y)])
+    return bins, y_bin
 
 def getMotorSteps(fname,proposal=None,visit=None):
     """
     Return motor name(s), nominal positions, and registred positions for a given scan.
         Return list of lists [[motor_name_1,nominal,registred], ...]
     """
-    
+    # read meta data dictionary
     dic = getMetaDic(fname)
+    # get the scan command containing motor names, exposure, latency, and boolean flags
+    # as a list of entries
     scan_type = getScanType(fname).split()
+    # remove scan type and all entries without letters
     motors = [s for s in scan_type if s.lower().islower()][1:]
+    # remove boolean flags
     motors = [m for m in motors if not 'false' in m.lower() and not 'true' in m.lower()]
     motor_steps = []
-    print(motors)
+    #print(motors)
     for motor in motors:
         # get the nominal motor position from the macro title
-        print(motor)
+        #print(motor)
         start, stop, steps = [scan_type[i+1:i+4] for i,s in enumerate(scan_type) if motor in s][0]
         nominal_pos = np.linspace(float(start),float(stop),int(steps)+1)
         # get the logged motor position
@@ -652,213 +562,6 @@ def getMotorSteps(fname,proposal=None,visit=None):
         motor_steps.append([motor,nominal_pos,motor_pos])
     
     return motor_steps
-
-def makeMap(x, y, actualXsteps, nominalYsteps, signal):
-    """
-    Return a map 
-    """
-    xmin, xmax = np.amin(x), np.amax(x)
-    ymin, ymax = np.amin(y), np.amax(y)
-    xi = np.linspace(xmin, xmax, 2*actualXsteps)
-    yi = np.linspace(ymin, ymax, 2*nominalYsteps)
-    XI, YI = np.meshgrid(xi, yi)
-    ZI = griddata((x.reshape(-1), y.reshape(-1)), signal.reshape(-1), (XI, YI), 'nearest')
-    return ZI
-
-def getXRFFitFilename(scans,proposal=None,visit=None, base_folder= None,channel=0):
-
-    proposal,visit = getCurrentProposal(proposal,visit)
-    if base_folder == None:
-        session_path = f'/data/visitors/danmax/{proposal}/{visit}/'
-    else:
-        session_path = base_folder
-    if len(scans) > 1:
-        scan_name=f'scan_{scans[0]:04}_to_{scans[-1]:04}'
-    else:
-        scan_name=f'scan_{scans[0]:04}'
-
-    fname = findScan(int(scans[0]), proposal=proposal, visit=visit)
-    idx = fname.split('/').index('danmax')
-    sample_name = fname.split('/')[idx + 4]
-    
-    xrf_out_dir = f'{session_path}process/xrf_fit/{sample_name}/{scan_name}/'
-    xrf_file_name = f'fitted_elements_{scan_name}_{channel}'
-    return xrf_out_dir, xrf_file_name
-
-
-def stitchScans(scans, XRF = True, XRD = True, xrf_calibration=[0.14478,0.01280573], map_type=np.float32, proposal=None, visit=None,normI0=True):
-    """Returns stitched XRF and XRD maps of multiple scans or a single scan 
-    For a single scan it maps the x and y motor coordinates to the collected data
-
-    Output parameters:
-    -xx x coordinates for the map (motor positions)
-    -yy y coordinates for the map (motor positions)
-    -xrf_map XRF map.
-    -energy list of energies
-    -Emax energy used for the scan
-    -xrd_map Diffraction intensity
-    -x_xrd 2-theta or q for diffraction
-    -Q Boolian, if true x_xrd is in q otherwise it is  2theta
-    -I0_s a map of I0
-    
-    Note that xrf_map, energy, and Emax are only returned if the input XRF == True (default)
-    Note that xrd_map, x_xrd, and Q are only returned if the input XRD == True (default)
-
-    Input parameters:
-    -scans: list of scans that needs to be stitched
-    -XRF: import XRF data (default True)
-    -XRF: import XRD data (default True)
-    -xrf_calibration: Calibration parameters for the rayspec_detector (calibration is np.range(4096)*xrf_calibration[1]-xrf_calibration[0]
-    -map_type: The data type of the maps, reduce for lager data sets. Default is float32
-    -proposal: select another proposal for testing
-    -visit: select another visit for testing
-    -normI0 Boolean: If true I0 will be normalized after stitching.
-    """
-    
-    fname = findScan(int(scans[0]), proposal=proposal, visit=visit)
-
-    with h5py.File(fname,'r') as f:
-        if XRF:
-            # import falcon x data
-            Emax = f['/entry/instrument/pilatus/energy'][()]*10**-3 # keV
-            # Energy calibration (Conversion of chanels to energy)      
-            channels = np.arange(4096)
-            if len(xrf_calibration) ==2:
-                energy = channels*xrf_calibration[1]+xrf_calibration[0]
-            if len(xrf_calibration) ==3:
-                energy =(channels**2)*xrf_calibration[2]+channels*xrf_calibration[1]+xrf_calibration[0]
-        try:
-            snake = f['/entry/snake'][()]
-        except KeyError:
-            snake = False
-            
-    for i,scan in enumerate(scans):
-        print(f'scan-{scan} - {i+1} of {len(scans)}',end='\r')
-        # print statements are suppressed within the following context
-        with io.capture_output() as captured:
-            fname = findScan(int(scan), proposal=proposal, visit=visit)
-            # import falcon x data
-            if XRF:        
-                with h5py.File(fname,'r') as f:
-                    S = f['/entry/instrument/falconx/data'][:]
-                S = S[:,energy<Emax*1.1]
-            if XRD:
-                # import azimuthally integrated data
-                aname = getAzintFname(fname)
-                with h5py.File(aname,'r') as f:
-                    try:
-                        x_xrd = f['q'][:]
-                        Q = True
-                    except KeyError:
-                        x_xrd = f['2th'][:]
-                        Q = False
-                    #I += np.mean(f['I'][:],axis=0)
-                    I = f['I'][:]
-            # import meta data and normalize to I0
-            meta = getMetaData(fname,relative = False)
-            I0 = meta['I0']
-
-            
-            #Normalize the data with I0 and get data shape, from either XRF or XRD data
-            #To ensure to have it no matter which one is selected
-            if XRF:
-                S = S.T.T.astype(map_type)
-                data_shape = S.shape[0]
-            if XRD:
-                I = I.T.T.astype(map_type)
-                data_shape = I.shape[0]
-
-            # get the motor names, nominal and registred positions
-            M1, M2 = getMotorSteps(fname) # Return list of lists [[motor_name_1,nominal,registred], ...]
-            y = M1[2] # registered motor position for the fast motor
-            x = M2[2] # registered motor position for the slow motor
-            if len(M1[1]) != len(M2[2]): # if the length of nominal and registered positions do not match
-                x = np.repeat(x,len(y)/(len(x)))
-
-            # get the shape of the map from the nominal positions
-            map_shape = (len(M2[1]),len(M1[1]))
-            #Check if that shape fits with the actual shape of the data
-            #This will not always be the case, as different recording software records different things
-            if XRF or XRD:
-                if np.prod(map_shape) != np.prod(data_shape):
-                    map_shape = (map_shape[0]-1,map_shape[1]-1)
-
-           
-            # Check if I0 exists
-            if I0 is None:
-                I0 = np.ones(map_shape)
-            else:
-                I0 = I0.reshape(map_shape)
-            # reshape x and y grids to the map dimensions
-            xx_new = x 
-            yy_new = y
-            I0_new = I0
-
-            #Reshape data to map dimensions
-            xx_new = xx_new.reshape((map_shape))
-            yy_new = yy_new.reshape((map_shape))
-            if XRF:
-                xrf_map_new = S.reshape((map_shape[0],map_shape[1],S.shape[-1]))
-            if XRD:
-                xrd_map_new = I.reshape((map_shape[0],map_shape[1],I.shape[-1]))
-            if i<1:
-                #If its the first iteration, create temporary variables, and find the overlap
-                xx = xx_new
-                yy = yy_new
-                I0_s = I0_new
-                if XRF:
-                    xrf_map = xrf_map_new
-                if XRD:
-                    xrd_map = xrd_map_new
-                # get the number of overlapping indices
-                step_size = np.mean(np.diff(xx,axis=0))
-            else:
-                #For later iterations, find the overlap, and use only the newest data.
-                overlap = round(np.mean(xx[-1]-xx_new[0])/step_size)+1
-                # set the overlapping indices to the mean 
-                xx[-overlap:,:] = xx[-overlap:,:]   #(xx[-overlap:,:]+xx_new[:overlap,:])/2
-                yy[-overlap:,:] = yy[-overlap:,:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
-                I0_s[-overlap:,:] = I0_s[-overlap:,:]   #(yy[-overlap:,:]+yy_new[:overlap,:])/2
-                if XRF: 
-                    xrf_map[-overlap:,:] = xrf_map[-overlap:,:,:] 
-                if XRD:
-                    xrd_map[-overlap:,:] = xrd_map[-overlap:,:,:]
-                # append the new values
-                xx = np.append(xx,xx_new[overlap:],axis=0)
-                yy = np.append(yy,yy_new[overlap:],axis=0)
-                I0_s = np.append(I0_s,I0_new[overlap:],axis=0)
-                if XRF:
-                    xrf_map = np.append(xrf_map,xrf_map_new[overlap:,:,:],axis=0)
-                if XRD:
-                    xrd_map = np.append(xrd_map,xrd_map_new[overlap:,:,:],axis=0)
-    
-    if snake:
-        print('Treating data as snake maps --- flipping every other line')
-        # if data are measured as "snake" format, flip every second line
-        if XRD:
-            xrd_map[1::2,:,:] = xrd_map[1::2,::-1,:]
-        if XRF:
-            xrf_map[1::2,:,:] = xrf_map[1::2,::-1,:]
-        yy[1::2,:] = yy[1::2,::-1]
-        I0_s[1::2,:] = I0_s[1::2,::-1]
- 
-    
-    #Return maps depending on the requested data type
-    if normI0:
-        I0_s /=np.max(I0_s)
-    if XRD:
-        x_xrd = x_xrd[np.min(xrd_map>0,axis=(0,1))]
-        xrd_map = xrd_map[:,:,np.min(xrd_map>0,axis=(0,1))]
-    if XRD and XRF:
-        return xx,yy,xrf_map,energy,Emax,xrd_map,x_xrd,Q,I0_s
-    elif XRD:
-        return xx,yy,xrd_map,x_xrd,Q,I0_s
-    elif XRF:
-        return xx,yy,xrf_map,energy,Emax,I0_s
-    else:
-        return xx,yy,I0_s
-
-  
     
 def getPixelCoords(pname,danmax_convention=True,corners=False):
     """
@@ -904,5 +607,375 @@ def getPixelCoords(pname,danmax_convention=True,corners=False):
             xyz[:,-1,-1] = xyz_c[:,3,-1,-1]
     return xyz
 
+def getAzintData(fname,
+                 get_meta = False,
+                 xrd_range = None,
+                 azi_range = None,
+                 proposal = None,
+                 visit = None):
+    '''
+        Return azimuthally integrated data for a specified file path. File name can be either the /raw/**/master.h5 or the /process/azint/**/*_pilatus_integrated_master.h5
+        Dictionary entries for missing or irrelevant fields are set to None
+        get_meta makes the function return the integration settings as a dictionary
+            parameters:
+                fname - string
+                get_meta - bool flag (default = False)
+                xrd_range - list/tuple (default = None)
+                azi_range - list/tuple (default = None)
+                proposal - int (default = None)
+                visit - int (default = None)
+            return:
+                data - dictionary
+                meta - dictionary
+    '''
+    # get the azimuthally integrated filename from provided file name,
+    if type(fname) == int:
+        fname = findscan(fname,proposal=proposal,visit=visit)
+    if '/raw/' in fname:
+        aname = getAzintFname(fname)
+    else:
+        aname = fname
+    # define output dictionary
+    data = {
+        'I': None,
+        'cake': None,
+        'q': None,
+        'tth': None,
+        'azi': None,
+        'q_edge': None,
+        'tth_edge': None,
+        'azi_edge': None,
+        'I_error': None,
+        'cake_error': None,
+        }
     
+    # define h5 data group names
+    group_1D = 'entry/data1d'
+    group_2D = 'entry/data2d'
+    group_meta = 'entry/azint'
+    
+    # define key reference dictionary
+    data_keys = {
+        'I'         : f'{group_1D}/I',
+        'cake'      : f'{group_2D}/cake',
+        'q'         : f'{group_1D}/q',
+        'tth'       : f'{group_1D}/2th',
+        'azi'       : f'{group_2D}/azi',
+        'q_edge'    : f'{group_1D}/q_edges',
+        'tth_edge'  : f'{group_1D}/tth_edges',
+        'azi_edge'  : f'{group_2D}/azi_edges',
+        'I_error'   : f'{group_1D}/I_error',
+        'cake_error': f'{group_2D}/cake_error',
+        'norm'      : f'{group_2D}/norm',
+        }
+    
+    # define key reference dictionary for old data format
+    data_keys_old = {
+        'I':        'I',
+        'cake':     'I',
+        'q':        'q',
+        'tth':      '2th',
+        'azi':      'phi',
+        'azi_edge': 'bin_bounds',
+        }
+
+
+    #define range keys
+    range_keys = [
+        'q',
+        'tth',
+        'azi' 
+        ]
+
+    # define ragne dictionary
+    ranges = {
+        'xrd': xrd_range,
+        'azi': azi_range,
+        }
+
+    #define initial rois
+    rois = {
+        'xrd': np.s_[:], 
+        'azi': np.s_[:],
+        }
+
+    meta = {}
+
+    # read the *_pilatus_integrated.h5 file
+    with h5py.File(aname,'r') as af:
+        if 'entry' in af.keys():
+            ### NeXus format ###
+            if get_meta:
+                # read meta data
+                for key in af[group_meta].keys():
+                    if isinstance(af[group_meta][key],h5py.Dataset):
+                        # check if value is a scalar
+                        if len(af[group_meta][key].shape)==0:
+                            meta[key] = af[group_meta][key][()]
+                        else:
+                            meta[key] = af[group_meta][key][:]
+                    else:
+                        meta[key] = {}
+                        for subkey in af[group_meta][key].keys():
+                            if len(af[group_meta][key][subkey].shape)==0:
+                                meta[key][subkey] = af[group_meta][key][subkey][()]
+                            else:
+                                meta[key][subkey] = af[group_meta][key][subkey][:]
+            # update needed rois
+            for key in range_keys:
+                if data_keys[key] in af:
+                    data_key = key
+                    if key == 'q' or key == 'tth':
+                        data_key = key
+                        key = 'xrd'
+
+                    if ranges[key] is not None:
+                        rois[key] = (af[data_keys[data_key]][:] > ranges[key][0]) & (af[data_keys[data_key]][:] < ranges[key][1])
+            # read integrated data
+            for key in data.keys():
+                if data_keys[key] in af:
+                    # check if value is a scalar
+                    if len(af[data_keys[key]].shape)==0:
+                        data[key] = af[data_keys[key]][()]
+                    elif len(af[data_keys[key]].shape)>2:
+                        data[key] = af[data_keys[key]][:,rois['azi'],rois['xrd']]
+                    elif len(af[data_keys[key]].shape)>1:
+                        data[key] = af[data_keys[key]][:,rois['xrd']]
+                    else:
+                        data[key] = af[data_keys[key]][:]
+        else:
+            # update needed rois
+            for key in range_keys:
+                if data_keys_old[key] in af:
+                    data_key = key
+                    if key == 'q' or key == 'tth':
+                        key = 'xrd'
+                    if ranges[key] is not None:
+                        rois[key] = (af[data_keys[data_key]] > ranges[key][0]) & (af[data_keys[data_key]] < ranges[key][1])
+
+            ### old format ###,
+            for key in data_keys_old.keys():
+                # differentiate between 1D and 2D data and update dictionary key accordingly
+                if data_keys_old[key] == 'I':
+                    if len(af[data_keys_old[key]].shape) > 2:
+                        key = 'cake'
+                    else:
+                        key = 'I'
+                # check if the current key is available in the file
+                if data_keys_old[key] in af:
+                    # check if value is a scalar
+                    if len(af[data_keys_old[key]].shape)==0:
+                        data[key]=af[data_keys_old[key]][()]
+                    elif len(af[data_keys_old[key]].shape) > 2:
+                        data[key]=af[data_keys_old[key]][:,rois['azi'],rois['xrd']]
+                    elif len(af[data_keys_old[key]].shape) > 1:
+                        data[key]=af[data_keys_old[key]][:,rois['xrd']]
+                    else:
+                        data[key]=af[data_keys_old[key]][:]
+            if get_meta:
+                # read remaining entries as meta data
+                for key in af.keys():
+                    if key not in data_keys_old.values():
+                        # check if value is a scalar
+                        if len(af[key].shape)==0:
+                            meta[key]=af[key][()]
+                        else:
+                            meta[key]=af[key][:]
+    # Add bin edges if they are not included.
+    for edge_key in ['q', 'tth', 'azi']:
+        #Check if the slot was filled in in the first place
+        if (type(data[f'{edge_key}']) != type(None)) and (type(data[f'{edge_key}_edge']) == type(None)):
+            
+            data[f'{edge_key}_edge'] = data[f'{edge_key}']
+            bin_width = np.nanmean(np.abs(np.diff(data[f'{edge_key}'])))
+            #print(f'Generating edges for {edge_key}, assuming an equidistant bin width of: {bin_width:.6f} unit({edge_key})')
+            data[f'{edge_key}_edge'] = np.append(data[f'{edge_key}_edge'],data[f'{edge_key}_edge'][-1]+bin_width)
+            data[f'{edge_key}_edge'] -= bin_width/2
+            
+    if get_meta:
+        return data, meta
+    else:
+        return data
+
+
+def interactiveImageHist(im,ignore_zero=False):
+    """
+    Plot an interactive image with histogram to easily adjust lower and upper thresholds
+        Parameters
+            im          - Image as an (n,m) numpy array
+            ignore_zero - Ignore pixel values less than or equal to zero (default False)
+    """
+    def plotImageHistogram(im,ignore_zero=False):
+        """
+        Plot an image with histogram
+            Parameters
+                im          - Image as an (n,m) numpy array
+                ignore_zero - Ignore pixel values less than or equal to zero (default False)
+            Return
+                fig         - matplotlib.figure
+                cm          - matplotlib.image
+                ax0         - matplotlib.axes (image axis)
+                ax1         - matplotlib.axes (histogram axis)
+        """
+        if ignore_zero:
+            # remove negative and nan pixels
+            _im = im[im>0]
+        else:
+            # remove nan pixels
+            _im = im[~np.isnan(im)]
+        # generate bin edges and centers
+        edges = np.linspace(np.min(_im),np.max(_im),256)
+        cen = edges[:-1]+np.mean(np.diff(edges))/2
+        # create histogram
+        val, edges = np.histogram(_im,bins=edges,density=True)
+        vmax = cen[np.argmin(np.abs(np.diff(val[np.argmax(val):])))]
+        
+        # estimate appropriate figure aspect ratio
+        im_aspect = im.shape[0]/im.shape[1]
+        width_ratios=[10,1]
+        ax_aspect = 1+(width_ratios[1]/np.sum(width_ratios))
+        fig_aspect = im_aspect*ax_aspect
+    
+        fig = plt.figure(figsize=(5*fig_aspect,5))
+        # initialize grid and subplot with different size-ratios
+        grid = plt.GridSpec(1,2,width_ratios=width_ratios) #rows,columns
+        ax0, ax1 = [fig.add_subplot(gr) for gr in grid]
+        # set tick parameters
+        ax0.set_xticks([])
+        ax0.set_yticks([])
+        ax1.set_xticks([])
+        ax1.yaxis.tick_right()
+        # plot image
+        cm = ax0.imshow(im,vmax=vmax)
+        vmin,vmax = cm.get_clim()
+        # plot histogram
+        ax1.plot(val,cen)
+        ax1.set_ylim(vmin,vmax)
+
+        return fig, cm, ax0, ax1
+
+    # initialize the figure
+    fig, cm, ax0, ax1 = plotImageHistogram(im,ignore_zero=ignore_zero)
+
+    # make a simple function to update the displayed image 
+    def update_clim(vmin=0,vmax=100,log=False):
+        """function for updating the image color limit. Called by ipywidgets.interact()"""
+        norm = 'log' if log else 'linear'
+        cm.set_norm(norm)
+        ax1.set_yscale(norm)
+        cm.set_clim(vmin,vmax)
+        ax1.set_ylim(vmin,vmax)
+        #ax0.set_title(f'vmin: {vmin:.2E}   vmax:{vmax:.2E}',
+        #              loc='left',
+        #              fontdict={'fontsize':'small'})
+        #return f'vmin: {vmin:.3E}   vmax:{vmax:.3E}'
+        return f'{vmin:.3E}   {vmax:.3E}'
+    # find vmin/vmax range and step size
+    vmin,vmax = np.nanmin(im),np.nanmax(im)
+    step = (vmax-vmin)/1000
+    # start interactive widget
+    inter = interact(update_clim,
+                     vmin=(vmin,vmax,step),
+                     vmax=(vmin,vmax,step),
+                     log=False)
+    return inter.widget
+
+def darkMode(use=True,style_dic={'figure.figsize':'small'}):
+    """
+    Toggle between dark and light mode styles for matplotlib figures.
+    Use style_dic to quickly customize the styles. (see plt.rcParams for available keys)
+    Use style_dic={'figure.figsize':'small'/'medium'/'large'} to quickly change figure size
+    Use plt.style.use('default') to revert to the matplotlib default style
+    """
+    
+    if 'figure.figsize' in style_dic and type(style_dic['figure.figsize']) == str:
+        if style_dic['figure.figsize'].lower() == 'small':
+            style_dic['figure.figsize'] = [8.533,4.8]
+        elif style_dic['figure.figsize'].lower() == 'medium':
+            style_dic['figure.figsize'] = [10.267, 5.775]
+        elif style_dic['figure.figsize'].lower() == 'large':
+            style_dic['figure.figsize'] = [12, 6.75]
+    
+    light_mode = {'axes.formatter.use_mathtext': True,
+                 'axes.formatter.useoffset': False,
+                 'axes.xmargin': 0.02,
+                 'axes.ymargin': 0.02,
+                 'axes.grid': True,
+                 'font.family': 'DejaVu Sans Mono',
+                 'xtick.minor.visible': True,
+                 'ytick.minor.visible': True,
+                 'lines.linewidth': 1.,
+                 'lines.markersize':3.,
+                 'axes.prop_cycle': cycler('color', ['#1f77b4', 
+                                                     '#ff7f0e', 
+                                                     '#2ca02c', 
+                                                     '#d62728', 
+                                                     '#9467bd', 
+                                                     '#8c564b', 
+                                                     '#e377c2', 
+                                                     '#7f7f7f', 
+                                                     '#bcbd22', 
+                                                     '#17becf',
+                                                     '#000000',
+                                                     '#000066',
+                                                     '#CC9900',
+                                                     '#006600',
+                                                     '#660000',
+                                                    ]),
+                'figure.autolayout': True,
+                'figure.dpi': 100.0,
+                }
+    
+    dark_mode = {'axes.facecolor': '#1a1a1a',
+                 'axes.edgecolor': '#E0E0E0',
+                 'axes.labelcolor': '#E0E0E0',
+                 'text.color': '#E0E0E0',
+                 'xtick.color': '#E0E0E0',
+                 'ytick.color': '#E0E0E0',
+                 'grid.color': '#2a2a2a',
+                 'figure.facecolor': '#1a1a1a',
+                 'figure.edgecolor': '#1a1a1a',
+                 'savefig.facecolor': '#1a1a1a',
+                 'savefig.edgecolor': '#1a1a1a',
+                 'legend.edgecolor':  '#2a2a2a',
+                 'axes.prop_cycle': cycler('color', ['#1f77b4', 
+                                                     '#ff7f0e', 
+                                                     '#2ca02c', 
+                                                     '#d62728', 
+                                                     '#9467bd', 
+                                                     '#8c564b', 
+                                                     '#e377c2', 
+                                                     '#7f7f7f', 
+                                                     '#bcbd22', 
+                                                     '#17becf',
+                                                     '#FFFFFF',
+                                                     '#000066',
+                                                     '#CC9900',
+                                                     '#006600',
+                                                     '#660000',
+                                                    ])
+                }
+    
+    light_mode.update(style_dic)
+    plt.style.use('default')
+    plt.style.use(light_mode)
+    if use:
+        plt.style.use(dark_mode)
+    return plt.rcParams
+
+def lightMode(use=True,style_dic={}):
+    """
+    Toggle between light and dark mode styles for matplotlib figures.
+    Use style_dic to quickly customize the styles. (see plt.rcParams for available keys)
+    Use style_dic={'figure.figsize':'small'/'medium'/'large'} to quickly change figure size
+    Use plt.style.use('default') to revert to the matplotlib default style
+    """
+    return darkMode(not use,style_dic={})
+
+#darkMode(use_dark_mode)
+
+#if use_dark_mode:
+#    print(f'DanMAX.py Version {version} - Dark mode')
+#else:
+#    print(f'DanMAX.py Version {version}')
 print(f'DanMAX.py Version {version}')

@@ -1,0 +1,6 @@
+host: localhost
+data_port: 22001
+shape: [1679, 1475]
+pixel_size: 172.0e-6
+nworkers: 6
+rep_port: 5560
