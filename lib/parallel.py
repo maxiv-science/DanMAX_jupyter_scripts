@@ -147,8 +147,13 @@ def getParallelAzintData(scan_list):
                 if type(datadic[key]) != type(None):
                     data[key] = np.append(data[key],datadic[key],axis=0)
             meta = {key:np.append(meta[key],metadic[key]) for key in metadic}
-    data.update(meta)
-    return data
+    
+    if np.all(meta['input'][0]==meta['input']):
+        meta['input']=meta['input'][0]
+    for key in meta:
+        if key != 'input':
+            meta[key]=np.unique(meta[key])
+    return data, meta
     
     #azidata = {}
     #I = []

@@ -450,7 +450,9 @@ def writeAzintFile(aname,data,meta=None):
 
         # write integration meta data
         if type(meta) != type(None):
-            poni_filename = meta['input'].pop('poni_filename')
+            poni_filename=None
+            if 'poni_filename' in meta['input'].keys():
+                poni_filename = meta['input'].pop('poni_filename')
             for key in meta:
                 if key != 'input':
                     azint_meta.create_dataset(key,data=meta[key])
@@ -465,5 +467,6 @@ def writeAzintFile(aname,data,meta=None):
                         #         azint_input[key].attrs['filename'] = meta['input']['poni_filename']
                         else:
                             azint_input.create_dataset(key,data=meta['input'][key])
-            azint_input[key].attrs['filename'] = poni_filename
+            if not poni_filename is None:
+                azint_input['poni'].attrs['filename'] = np.array(poni_filename,dtype=text_dtype)
     return aname

@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.0.0'
+version = '3.1.0'
 
 #use_dark_mode = True
 import os
@@ -721,6 +721,12 @@ def getAzintData(fname,
                                 meta[key][subkey] = af[group_meta][key][subkey][()]
                             else:
                                 meta[key][subkey] = af[group_meta][key][subkey][:]
+
+                # check for poni filename attribute
+                if 'filename' in af[group_meta]['input/poni'].attrs.keys():
+                    meta['input']['poni_filename'] = af[group_meta]['input/poni'].attrs['filename']
+
+            
             # update needed rois
             for key in range_keys:
                 if data_keys[key] in af:
