@@ -1,97 +1,93 @@
 import sys
+import os
+import h5py
+import numpy as np
+import matplotlib.pyplot as plt
+from IPython.utils import io
+from matplotlib.colors import rgb_to_hsv
 sys.path.append('../')
 import DanMAX as DM
-import numpy as np
-import h5py
-import os
-import matplotlib.pyplot as plt
-from matplotlib.colors import rgb_to_hsv
-from IPython.utils import io
-from texture import colorCylinderAnnotation
 
 
 def combineMaps(rh,
                 gs=None,
                 bv=None,
                 hsv=False,
-                scale_place=np.s_[10:12,10:30,:],
+                scale_place=np.s_[10:12, 10:30, :],
                 normalize=False,
-                minmax = [[0.,1.],[0.,1.],[0.,1.]]):
+                minmax=[[0., 1.], [0., 1.], [0., 1.]]):
     """ Returns a combination of three maps to plot as an rgb map.
-    inputs parameters: 
+    inputs parameters:
         rh (red or hue) range zero to one
         gs (green or saturation) range zero to one
         bv (blue or value) range zero to one
-        hsv boolean, if true the combined map will be converted from rgb to hsv.
+        hsv boolean, if true the combined map will be go from rgb to hsv.
         scale_place : a numpy slice where there should be white for a scale bar
         normalize: boolan, if true will normalize to within the minmax variable
         minmax
     """
 
-    if gs == None:
+    if gs is None:
         gs = np.zeros(rh.shape)
-    if  bv == None:
+    if bv is None:
         bv = np.zeros(rh.shape)
-        
-    
-        
-    scale_place = np.s_[scale_place[0][0]:scale_place[0][1],scale_place[1][0]:scale_place[1][1],:]
-    cm = np.nan(rh.shape[0],rh.shape[1],3)
+
+    scale_place = np.s_[
+                    scale_place[0][0]:scale_place[0][1],
+                    scale_place[1][0]:scale_place[1][1],
+                    :
+                    ]
+
+    cm = np.nan(rh.shape[0], rh.shape[1], 3)
     if normalize:
         for dim in range(cm.shape[2]):
-            cmap = cm[:,:,dim]
-            cmap[cmap<minmax[dim][0]] = minmax[dim][0]
-            cmap[cmap>minmax[dim][1]] = minmax[dim][1]
+            cmap = cm[:, :, dim]
+            cmap[cmap < minmax[dim][0]] = minmax[dim][0]
+            cmap[cmap > minmax[dim][1]] = minmax[dim][1]
             cmap -= minmax[dim][0]
-            cmap /=np.max(cmap)
-            cm[:,:,dim] = cmap
-    
-    cm[:,:,0] = rh
-    cm[:,:,1] = gs
-    cm[:,:,2] = bv
+            cmap /= np.max(cmap)
+            cm[:, :, dim] = cmap
+
+    cm[:, :, 0] = rh
+    cm[:, :, 1] = gs
+    cm[:, :, 2] = bv
     cm[np.isnan(cm)] = 0
     cm[scale_place] = 1
     if hsv:
         cm = rgb_to_hsv(cm)
     return cm
-    
-    
-    
-        
-def makeMap(x, y, actualXsteps, nominalYsteps, signal):
-    """
-    Return a map 
-    """
-    xmin, xmax = np.amin(x), np.amax(x)
-    ymin, ymax = np.amin(y), np.amax(y)
-    xi = np.linspace(xmin, xmax, 2*actualXsteps)
-    yi = np.linspace(ymin, ymax, 2*nominalYsteps)
-    XI, YI = np.meshgrid(xi, yi)
-    ZI = griddata((x.reshape(-1), y.reshape(-1)), signal.reshape(-1), (XI, YI), 'nearest')
-    return ZI
 
-def getXRFFitFilename(scans,proposal=None,visit=None, base_folder= None,channel=0):
 
-    proposal,visit = DM.getCurrentProposal(proposal,visit)
-    if base_folder == None:
+def getXRFFitFilename(
+        scans,
+        proposal=None,
+        visit=None,
+        base_folder=None,
+        channel=0
+        ):
+
+    proposal, visit = DM.getCurrentProposal(proposal, visit)
+
+    if base_folder is None:
         session_path = f'/data/visitors/danmax/{proposal}/{visit}/'
     else:
         session_path = base_folder
+
     if len(scans) > 1:
-        scan_name=f'scan_{scans[0]:04}_to_{scans[-1]:04}'
+        scan_name = f'scan_{scans[0]:04}_to_{scans[-1]:04}'
     else:
-        scan_name=f'scan_{scans[0]:04}'
+        scan_name = f'scan_{scans[0]:04}'
 
     fname = DM.findScan(int(scans[0]), proposal=proposal, visit=visit)
     idx = fname.split('/').index('danmax')
     sample_name = fname.split('/')[idx + 4]
-    
+
     xrf_out_dir = f'{session_path}process/xrf_fit/{sample_name}/{scan_name}/'
     xrf_file_name = f'fitted_elements_{scan_name}_{channel}'
+
     return xrf_out_dir, xrf_file_name
 
 
-   
 def stitchScans(scans,
                 XRF=True,
                 XRD=True,
@@ -128,13 +124,17 @@ def stitchScans(scans,
     -XRF: import XRF data (default True)
     -XRD: import XRD data (default True)
     -XRD_cake: import XRD cake data (default True)
-    -xrd_range: list/tuple of min/max scattering angle to load, None for whole dataset (default None)
-    -azi_range: list/tuple of min/max azimuthal angle to load, None for whole dataset (default None)
+    -xrd_range: list/tuple of min/max scattering angle to load, None for whole
+        dataset (default None)
+    -azi_range: list/tuple of min/max azimuthal angle to load, None for whole
+        dataset (default None)
     -xrf_calibration: Calibration parameters for the rayspec_detector:
         (calibration is np.range(4096)*xrf_calibration[1]-xrf_calibration[0])
         (default (0.14478, 0.01280573))
-    -map_type: output map datatype, reduce for less memory footprint (default np.float32)
-    -normI0 Boolean: If true I0 will be normalized after stitching. (default True)
+    -map_type: output map datatype, reduce for less memory footprint
+        (default np.float32)
+    -normI0 Boolean: If true I0 will be normalized after stitching.
+        (default True)
     -proposal: select another proposal for testing. (default None)
     -visit: select another visit for testing default. (default None)
     """
@@ -185,9 +185,11 @@ def stitchScans(scans,
             if XRD:
                 # import azimuthally integrated data
                 aname = DM.getAzintFname(fname)
-                data = DM.getAzintData(aname,
-                                       xrd_range = xrd_range,
-                                       azi_range = azi_range)
+                data = DM.getAzintData(
+                        aname,
+                        xrd_range=xrd_range,
+                        azi_range=azi_range
+                        )
                 if i == 0:
                     if data['q'] is not None:
                         x_xrd = data['q']
@@ -307,7 +309,6 @@ def stitchScans(scans,
         # if data are measured as "snake" format, flip every second line
         if XRF:
             xrf_map[1::2, :, :] = xrf_map[1::2, ::-1, :]
-            snitch['xrf_map'] = xrf_map
         if XRD:
             xrd_map[1::2, :, :] = xrd_map[1::2, ::-1, :]
             if XRD_cake:
@@ -330,6 +331,9 @@ def stitchScans(scans,
             snitch['cake_map'] = cake_map
         xrd_map = xrd_map[:, :, np.min(xrd_map > 0, axis=(0, 1))]
         snitch['xrd_map'] = xrd_map
+
+    if XRF:
+        snitch['xrf_map'] = xrf_map
 
     # Giving out the stitches!
     return snitch
