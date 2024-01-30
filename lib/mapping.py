@@ -439,8 +439,8 @@ def save_maps(
                 snitch_keys['energy'], f'{group_xrf}/energy',
                 ]
 
-    map['x'] = np.mean(map['x_map'], axis=0)
-    map['y'] = np.mean(map['y_map'], axis=1)
+    maps['x'] = np.mean(maps['x_map'], axis=0)
+    maps['y'] = np.mean(maps['y_map'], axis=1)
 
     attributes = {
             'entry': [
