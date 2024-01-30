@@ -366,22 +366,22 @@ def setup_h5_softlinks(
             af[links[key]] = h5py.SoftLink(key)
 
 
-def permute_order(
+def transpose_order(
         shape: npt.ArrayLike,
-        perm: bool
+        trans: bool
         ) -> npt.ArrayLike:
     # Finds the permutation to put order as -1 1 0 2 3 4 ...
-    # Shape is the shape of the matrix to permute
-    # perm (bool) is whether or not to permute the matrix
+    # Shape is the shape of the matrix to transpose
+    # trans (bool) is whether or not to transpose the matrix
 
-    if perm:
-        perm_order = [len(shape)-1, 1, 0]
+    if trans:
+        trans_order = [len(shape)-1, 1, 0]
         for i in range(2, len(shape)-1):
-            perm_order.append(i)
+            trans_order.append(i)
     else:
-        perm_order = [i for i in range(len(shape))]
+        trans_order = [i for i in range(len(shape))]
 
-    return perm_order
+    return trans_order
 
 
 def save_maps(
@@ -472,9 +472,9 @@ def save_maps(
     for group in attributes.keys():
         for attr in attributes[group]:
             if attr[0] == 'axes':
-                attr[0] = np.permute(
+                attr[0] = np.transpose(
                             attr[0],
-                            permute_order(
+                            transpose_order(
                                 attr[1].shape,
                                 transpose_data))
 
@@ -515,8 +515,8 @@ def save_maps(
                             )
                     continue
 
-                perm_order = permute_order(maps[key].shape, transpose_data)
+                trans_order = transpose_order(maps[key].shape, transpose_data)
                 sf.ctreate_dataset(
                         snitch_keys[key],
-                        data=np.permute(maps[key], perm_order)
+                        data=np.transpose(maps[key], trans_order)
                         )
