@@ -350,7 +350,7 @@ def setup_h5_file(
 
     with h5py.File(filename, 'w') as af:
         for group in attributes.keys():
-            if groups is not None or group in groups:
+            if groups is None or group in groups:
                 h5group = af.create_group(group)
                 for attr in attributes[group]:
                     h5group.attrs[attr[0]] = attr[1]
@@ -362,9 +362,19 @@ def setup_h5_softlinks(
         ) -> None:
 
     with h5py.File(filename, 'a') as af:
-        for key in links.keys():
-            af[links[key]] = h5py.SoftLink(key)
+        for group in links.keys():
+            for key in links[group].keys():
+                af[links[group][key]] = h5py.SoftLink(key)
 
+def copy_h5_linking(
+        filename: str,
+        links: dict,
+        ) -> None:
+
+    with h5py.File(filename, 'a') as af:
+        for group in links.keys():
+            for key in links[group].keys():
+                af[links[group][key]] = af[key]
 
 def transpose_order(
         shape: npt.ArrayLike,
@@ -374,7 +384,7 @@ def transpose_order(
     # Shape is the shape of the matrix to transpose
     # trans (bool) is whether or not to transpose the matrix
 
-    if trans:
+    if trans and len(shape) > 2:
         trans_order = [len(shape)-1, 1, 0]
         for i in range(2, len(shape)-1):
             trans_order.append(i)
@@ -383,11 +393,22 @@ def transpose_order(
 
     return trans_order
 
+def q_to_unit(q: bool) -> list:
+    if q:
+        unit = ['q', 'A-1']
+    else:
+        unit = ['tth', 'degrees']
+
+    return unit
+
+
 
 def save_maps(
         maps: dict,
         scans: list,
-        transpose_data: bool = True
+        transpose_data: bool = True,
+        proposal: int = None,
+        visit: int = None,
         ) -> None:
 
     group_measurement = 'entry/measurement'
@@ -398,6 +419,8 @@ def save_maps(
 
     h5string = h5py.string_dtype()
 
+    x_xrd = q_to_unit(maps['Q'])
+
     snitch_keys = {
             'x_map': f'{group_measurement}/x_map',
             'y_map': f'{group_measurement}/y_map',
@@ -407,7 +430,7 @@ def save_maps(
             'xrd_map': f'{group_xrd1d}/xrd',
             'cake_map': f'{group_xrd2d}/xrd',
             'xrf_map': f'{group_xrf}/xrf',
-            'x_xrd': f'{group_measurement}/x_xrd',
+            'x_xrd': f'{group_measurement}/{x_xrd[0]}',
             'energy': f'{group_measurement}/energy',
             'Emax': f'{group_measurement}/Emax',
             'I0_map': f'{group_measurement}/I0_map',
@@ -418,29 +441,29 @@ def save_maps(
     groups = [group_measurement]
     if not maps['xrd_map'] is None:
         groups.append(group_xrd1d)
-        soft_links[group_xrd1d] = [
-                snitch_keys['x'], f'{group_xrd1d}/x',
-                snitch_keys['y'], f'{group_xrd1d}/y',
-                snitch_keys['x_xrd'], f'{group_xrd1d}/x_xrd',
-                ]
+        soft_links[group_xrd1d] = {
+                snitch_keys['x']: f'{group_xrd1d}/x',
+                snitch_keys['y']: f'{group_xrd1d}/y',
+                snitch_keys['x_xrd']: f'{group_xrd1d}/{x_xrd[0]}',
+                }
     if not maps['cake_map'] is None:
         groups.append(group_xrd2d)
-        soft_links[group_xrd2d] = [
-                snitch_keys['x'], f'{group_xrd2d}/x',
-                snitch_keys['y'], f'{group_xrd2d}/y',
-                snitch_keys['x_xrd'], f'{group_xrd1d}/x_xrd',
-                snitch_keys['azi'], f'{group_xrd2d}/azi',
-                ]
+        soft_links[group_xrd2d] = {
+                snitch_keys['x']: f'{group_xrd2d}/x',
+                snitch_keys['y']: f'{group_xrd2d}/y',
+                snitch_keys['x_xrd']: f'{group_xrd1d}/{x_xrd[0]}',
+                snitch_keys['azi']: f'{group_xrd2d}/azi',
+                }
     if not maps['xrf_map'] is None:
         groups.append(group_xrf)
-        soft_links[group_xrf] = [
-                snitch_keys['x'], f'{group_xrf}/x',
-                snitch_keys['y'], f'{group_xrf}/y',
-                snitch_keys['energy'], f'{group_xrf}/energy',
-                ]
+        soft_links[group_xrf] = {
+                snitch_keys['x']: f'{group_xrf}/x',
+                snitch_keys['y']: f'{group_xrf}/y',
+                snitch_keys['energy']: f'{group_xrf}/energy',
+                }
 
-    maps['x'] = np.mean(maps['x_map'], axis=0)
-    maps['y'] = np.mean(maps['y_map'], axis=1)
+    maps['x'] = np.mean(maps['x_map'], axis=1)
+    maps['y'] = np.mean(maps['y_map'], axis=0)
 
     attributes = {
             'entry': [
@@ -450,13 +473,13 @@ def save_maps(
                 ['NX_class', 'NXdata'],
                 ['interpretation', 'image'],
                 ['signal', 'xrd'],
-                ['axes', np.array(['x', 'y', 'x_xrd'], dtype=h5string)],
+                ['axes', np.array(['x', 'y', x_xrd[0]], dtype=h5string)],
                 ],
             group_xrd2d: [
                 ['NX_class', 'NXdata'],
                 ['interpretation', 'image'],
                 ['signal', 'xrd'],
-                ['axes', np.array(['x', 'y', 'azi', 'x_xrd'], dtype=h5string)],
+                ['axes', np.array(['x', 'y', 'azi', x_xrd[0]], dtype=h5string)],
                 ],
             group_xrf: [
                 ['NX_class', 'NXdata'],
@@ -468,18 +491,28 @@ def save_maps(
                 ['NX_class', 'NXprocess'],
                 ],
             }
+    units = {
+            'energy': 'keV',
+            'x_xrd': x_xrd[1],
+            'q': 'A-1',
+            'x': 'mm',
+            'y': 'mm',
+            }
 
     for group in attributes.keys():
         for attr in attributes[group]:
             if attr[0] == 'axes':
-                attr[0] = np.transpose(
-                            attr[0],
-                            transpose_order(
-                                attr[1].shape,
-                                transpose_data))
+                dims = np.ones([3*i for i in range(len(attr[1]))]).shape
+                trans_order = transpose_order(
+                                dims,
+                                transpose_data)
+                attr[1] = attr[1][trans_order]
 
     stitch_folder_name = os.path.dirname(
-            DM.findScan(scans[0])).replace(
+            DM.findScan(
+                scans[0],
+                proposal=proposal,
+                visit=visit)).replace(
                     'raw',
                     'process/stitched_maps')
 
@@ -491,32 +524,43 @@ def save_maps(
             f'scan_{scans[0]}-{scans[-1]}.h5'
             )
     scan_filenames = np.array(
-            [DM.findScan(scan) for scan in scans],
+            [DM.findScan(
+                scan,
+                proposal=proposal,
+                visit=visit
+                ) for scan in scans],
             dtype=h5py.special_dtype(vlen=str)
             )
 
     setup_h5_file(stitch_file, attributes, groups=groups)
-    setup_h5_softlinks(stitch_file, soft_links)
 
     with h5py.File(stitch_file, 'a') as sf:
         sf.create_dataset(
                 group_scans,
                 data=scan_filenames,
-                type=h5py.special_dtype(vlen=str))
+                dtype=h5py.special_dtype(vlen=str))
 
         for key in maps.keys():
 
             if not maps[key] is None:
 
                 if not isinstance(maps[key], np.ndarray):
-                    sf.ctreate_dataset(
+                    sf.create_dataset(
                             snitch_keys[key],
                             data=maps[key]
                             )
                     continue
 
-                trans_order = transpose_order(maps[key].shape, transpose_data)
-                sf.ctreate_dataset(
+                trans_order = transpose_order(
+                                maps[key].shape,
+                                transpose_data
+                                )
+
+                sf.create_dataset(
                         snitch_keys[key],
                         data=np.transpose(maps[key], trans_order)
                         )
+                if key in units.keys():
+                    sf[snitch_keys[key]].attrs['unit'] = units[key]
+
+    copy_h5_linking(stitch_file, soft_links)
