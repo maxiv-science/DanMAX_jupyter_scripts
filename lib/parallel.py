@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """DanMAX library for handling parallel scans, e.g. AMPIX or similar multi sample holder"""
 import os
+import glob
 import h5py as h5
 import numpy as np
 from azint import AzimuthalIntegrator
@@ -10,6 +11,29 @@ import IPython
 import sys
 sys.path.append('../')
 import DanMAX as DM
+
+def getStartTime(file):
+    """Get the start time of the first entry in a parallel master file"""
+    with h5.File(file,'r') as f:
+        keys = sorted(list(f.keys()))
+        start_time = f[keys[0]]['start_time'][()].decode('utf-8').replace('T',' ').split('.')[0]
+    return start_time
+
+def getEndTime(file):
+    """Get the end time of the last entry in a parallel master file"""
+    with h5.File(file,'r') as f:
+        keys = sorted(list(f.keys()))
+        end_time = f[keys[-1]]['end_time'][()].decode('utf-8').replace('T',' ').split('.')[0]
+    return end_time
+
+def findAllParallel(descending=False,proposal=None,visit=None):
+    """
+    Return a sorted list of all parallel master scans in the current visit
+    """
+    proposal, visit = DM.getCurrentProposal(proposal,visit)
+    files = sorted(glob.glob(f'/data/visitors/danmax/{proposal}/{visit}/raw/**/master.h5', recursive=True), key = getStartTime, reverse=descending)
+    return files
+
 
 def parallelMetaMaster(fname):
     """

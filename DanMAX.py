@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.1.0'
+version = '3.2.0'
 
 #use_dark_mode = True
 import os
@@ -27,19 +27,19 @@ except:
 try:
     import lib.mapping as mapping
 except:
-    print('Change to HDF5 server to load all modules')
+    print('Unable to load lib/mapping.py')
 try:
     import lib.texture as texture
 except:
-    print('Change to HDF5 server to load all modules')
+    print('Unable to load lib/texture.py')
 try:
     import lib.integration as integration
 except:
-    print('Change to HDF5 server to load all modules')
+    print('Unable to load lib/integration.py')
 try:
     import lib.parallel as parallel
 except:
-    print('Change to HDF5 server to load all modules')
+    print('Unable to load lib/parallel.py')
     
 def reduceArray(a,reduction_factor, axis=0):
     """Reduce the size of an array by step-wise averaging"""
@@ -146,7 +146,7 @@ def getCurrentProposal(proposal=None, visit=None):
         visit = visit_new
     return proposal, visit
 
-def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=None):
+def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=None,is_parallel=False):
     """
     Return the path to the latest /raw/*/*.h5 scan for the provided proposal and visit.
     Defaults to the current proposal directory of proposal and visit are not specified.
@@ -156,6 +156,8 @@ def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=N
     Use require_integrated = True to ensure that the returned scan has a valid integrated .h5 file.
     """
     proposal, visit = getCurrentProposal(proposal,visit)
+    if is_parallel:
+        return parallel.findAllParallel(proposal=None,visit=None)[-1]
     #print(proposal, visit)
     files = sorted(glob.glob(f'/data/visitors/danmax/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.getctime, reverse=True)
 
@@ -222,6 +224,9 @@ def getMetaData(fname,custom_keys={},relative=True,proposal=None,visit=None):
     """
     if fname.startswith('scan-'):
         fname = findScan(fname,proposal,visit)
+
+    if 'master.h5' in fname:
+        fname = fname.replace('raw', 'process/azint').replace('.h5','_meta.h5')
         
     data = {'I0':None,
             'time':None,
@@ -268,6 +273,8 @@ def getMetaData(fname,custom_keys={},relative=True,proposal=None,visit=None):
 
 def getMetaDic(fname):
     """Return dictionary of available meta data, reusing the .h5 dictionary keys."""
+    if 'master.h5' in fname:
+        fname = fname.replace('raw', 'process/azint').replace('.h5','_meta.h5')
     data = {}
     with h5py.File(fname,'r') as f:
         for key in f['/entry/instrument/'].keys():
@@ -333,19 +340,32 @@ def findAllScans(scan_type='any',descending=True,proposal=None,visit=None):
     return files
 
 
-def findScan(scan_id=None,proposal=None,visit=None):
+def findScan(scan_id=None,proposal=None,visit=None,is_parallel):
     """Return the path of a specified scan number. If no scan number is specified, return latest scan"""
-    if scan_id == None:
-        return getLatestScan()
-    elif type(scan_id) == int:
-        scan_id = f'scan-{scan_id:04d}'
-    elif type(scan_id) == str:
-        scan_id = 'scan-'+scan_id.strip().split('scan-')[-1][:4]
+    if not is_parallel:
+        if scan_id == None:
+            return getLatestScan()
+        elif type(scan_id) == int:
+            scan_id = f'scan-{scan_id:04d}'
+        elif type(scan_id) == str:
+            scan_id = 'scan-'+scan_id.strip().split('scan-')[-1][:4]
 
-    for sc in findAllScans(proposal=proposal,visit=visit):
-        if scan_id in sc:
-            return sc
-    print('Unable to find {} in {}/{}'.format(scan_id,*getCurrentProposal(proposal,visit)))
+        for sc in findAllScans(proposal=proposal,visit=visit):
+            if scan_id in sc:
+                return sc
+        print('Unable to find {} in {}/{}'.format(scan_id,*getCurrentProposal(proposal,visit)))
+
+    else:
+        scans = parallel.findAllParallel(proposal=None,visit=None)
+        if scan_id is None:
+            index = -1
+        elif type(scan_id) == int:
+            index = scan_id
+        elif type(scan_id) == str:
+            if scan_id in scans:
+                return scan_id
+            print('Unable to find {} in {}/{}'.format(scan_id,*getCurrentProposal(proposal,visit)))
+        return scans[index]
     
     
 def getScanType(fname,proposal=None,visit=None):
@@ -893,7 +913,16 @@ def darkMode(use=True,style_dic={'figure.figsize':'small'}):
     Use style_dic={'figure.figsize':'small'/'medium'/'large'} to quickly change figure size
     Use plt.style.use('default') to revert to the matplotlib default style
     """
-    
+    # dictionary of short hand keywords
+    short_hand = {'size' :'figure.figsize',
+                  'grid' : 'axes.grid'}
+    # replace short hand keys with full name keywords
+    keys = list(style_dic.keys())
+    for key in keys:
+        if key in short_hand.keys():
+            style_dic[short_hand[key]]=style_dic[key]
+            style_dic.pop(key)
+
     if 'figure.figsize' in style_dic and type(style_dic['figure.figsize']) == str:
         if style_dic['figure.figsize'].lower() == 'small':
             style_dic['figure.figsize'] = [8.533,4.8]

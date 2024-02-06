@@ -382,7 +382,10 @@ def writeAzintFile(aname,data,meta=None):
         data1d.attrs['NX_class'] = 'NXdata'
         data1d.attrs['interpretation'] = 'spectrum'
         data1d.attrs['signal'] = 'I'
-        data1d.attrs['axes'] = np.array(['.','2th'],dtype=text_dtype)
+        if Q:
+            data1d.attrs['axes'] = np.array(['.','q'],dtype=text_dtype)
+        else:
+            data1d.attrs['axes'] = np.array(['.','2th'],dtype=text_dtype)
 
         if write_2d:
             #entry/data2d
@@ -390,7 +393,10 @@ def writeAzintFile(aname,data,meta=None):
             data2d.attrs['NX_class'] = 'NXdata'
             data2d.attrs['interpretation'] = 'image'
             data2d.attrs['signal'] = 'cake'
-            data2d.attrs['axes'] = np.array(['.','azi','2th'],dtype=text_dtype)
+            if Q:
+                data2d.attrs['axes'] = np.array(['.','azi','q'],dtype=text_dtype)
+            else:
+                data2d.attrs['axes'] = np.array(['.','azi','2th'],dtype=text_dtype)
         
         #entry/azint
         azint_meta = f.create_group(group_meta)

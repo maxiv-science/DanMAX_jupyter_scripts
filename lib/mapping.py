@@ -7,7 +7,6 @@ import os
 import matplotlib.pyplot as plt
 from matplotlib.colors import rgb_to_hsv
 from IPython.utils import io
-from texture import colorCylinderAnnotation
 
 
 def combineMaps(rh,
