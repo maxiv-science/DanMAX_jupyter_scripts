@@ -1,96 +1,94 @@
 import sys
+import os
+import h5py
+import numpy as np
+import numpy.typing as npt
+import matplotlib.pyplot as plt
+from IPython.utils import io
+from matplotlib.colors import rgb_to_hsv
 sys.path.append('../')
 import DanMAX as DM
-import numpy as np
-import h5py
-import os
-import matplotlib.pyplot as plt
-from matplotlib.colors import rgb_to_hsv
-from IPython.utils import io
 
 
 def combineMaps(rh,
                 gs=None,
                 bv=None,
                 hsv=False,
-                scale_place=np.s_[10:12,10:30,:],
+                scale_place=np.s_[10:12, 10:30, :],
                 normalize=False,
-                minmax = [[0.,1.],[0.,1.],[0.,1.]]):
+                minmax=[[0., 1.], [0., 1.], [0., 1.]]):
     """ Returns a combination of three maps to plot as an rgb map.
-    inputs parameters: 
+    inputs parameters:
         rh (red or hue) range zero to one
         gs (green or saturation) range zero to one
         bv (blue or value) range zero to one
-        hsv boolean, if true the combined map will be converted from rgb to hsv.
+        hsv boolean, if true the combined map will be go from rgb to hsv.
         scale_place : a numpy slice where there should be white for a scale bar
         normalize: boolan, if true will normalize to within the minmax variable
         minmax
     """
 
-    if gs == None:
+    if gs is None:
         gs = np.zeros(rh.shape)
-    if  bv == None:
+    if bv is None:
         bv = np.zeros(rh.shape)
-        
-    
-        
-    scale_place = np.s_[scale_place[0][0]:scale_place[0][1],scale_place[1][0]:scale_place[1][1],:]
-    cm = np.nan(rh.shape[0],rh.shape[1],3)
+
+    scale_place = np.s_[
+                    scale_place[0][0]:scale_place[0][1],
+                    scale_place[1][0]:scale_place[1][1],
+                    :
+                    ]
+
+    cm = np.nan(rh.shape[0], rh.shape[1], 3)
     if normalize:
         for dim in range(cm.shape[2]):
-            cmap = cm[:,:,dim]
-            cmap[cmap<minmax[dim][0]] = minmax[dim][0]
-            cmap[cmap>minmax[dim][1]] = minmax[dim][1]
+            cmap = cm[:, :, dim]
+            cmap[cmap < minmax[dim][0]] = minmax[dim][0]
+            cmap[cmap > minmax[dim][1]] = minmax[dim][1]
             cmap -= minmax[dim][0]
-            cmap /=np.max(cmap)
-            cm[:,:,dim] = cmap
-    
-    cm[:,:,0] = rh
-    cm[:,:,1] = gs
-    cm[:,:,2] = bv
+            cmap /= np.max(cmap)
+            cm[:, :, dim] = cmap
+
+    cm[:, :, 0] = rh
+    cm[:, :, 1] = gs
+    cm[:, :, 2] = bv
     cm[np.isnan(cm)] = 0
     cm[scale_place] = 1
     if hsv:
         cm = rgb_to_hsv(cm)
     return cm
-    
-    
-    
-        
-def makeMap(x, y, actualXsteps, nominalYsteps, signal):
-    """
-    Return a map 
-    """
-    xmin, xmax = np.amin(x), np.amax(x)
-    ymin, ymax = np.amin(y), np.amax(y)
-    xi = np.linspace(xmin, xmax, 2*actualXsteps)
-    yi = np.linspace(ymin, ymax, 2*nominalYsteps)
-    XI, YI = np.meshgrid(xi, yi)
-    ZI = griddata((x.reshape(-1), y.reshape(-1)), signal.reshape(-1), (XI, YI), 'nearest')
-    return ZI
 
-def getXRFFitFilename(scans,proposal=None,visit=None, base_folder= None,channel=0):
 
-    proposal,visit = DM.getCurrentProposal(proposal,visit)
-    if base_folder == None:
+def getXRFFitFilename(
+        scans,
+        proposal=None,
+        visit=None,
+        base_folder=None,
+        channel=0
+        ):
+
+    proposal, visit = DM.getCurrentProposal(proposal, visit)
+
+    if base_folder is None:
         session_path = f'/data/visitors/danmax/{proposal}/{visit}/'
     else:
         session_path = base_folder
+
     if len(scans) > 1:
-        scan_name=f'scan_{scans[0]:04}_to_{scans[-1]:04}'
+        scan_name = f'scan_{scans[0]:04}_to_{scans[-1]:04}'
     else:
-        scan_name=f'scan_{scans[0]:04}'
+        scan_name = f'scan_{scans[0]:04}'
 
     fname = DM.findScan(int(scans[0]), proposal=proposal, visit=visit)
     idx = fname.split('/').index('danmax')
     sample_name = fname.split('/')[idx + 4]
-    
+
     xrf_out_dir = f'{session_path}process/xrf_fit/{sample_name}/{scan_name}/'
     xrf_file_name = f'fitted_elements_{scan_name}_{channel}'
+
     return xrf_out_dir, xrf_file_name
 
 
-   
 def stitchScans(scans,
                 XRF=True,
                 XRD=True,
@@ -127,13 +125,17 @@ def stitchScans(scans,
     -XRF: import XRF data (default True)
     -XRD: import XRD data (default True)
     -XRD_cake: import XRD cake data (default True)
-    -xrd_range: list/tuple of min/max scattering angle to load, None for whole dataset (default None)
-    -azi_range: list/tuple of min/max azimuthal angle to load, None for whole dataset (default None)
+    -xrd_range: list/tuple of min/max scattering angle to load, None for whole
+        dataset (default None)
+    -azi_range: list/tuple of min/max azimuthal angle to load, None for whole
+        dataset (default None)
     -xrf_calibration: Calibration parameters for the rayspec_detector:
         (calibration is np.range(4096)*xrf_calibration[1]-xrf_calibration[0])
         (default (0.14478, 0.01280573))
-    -map_type: output map datatype, reduce for less memory footprint (default np.float32)
-    -normI0 Boolean: If true I0 will be normalized after stitching. (default True)
+    -map_type: output map datatype, reduce for less memory footprint
+        (default np.float32)
+    -normI0 Boolean: If true I0 will be normalized after stitching.
+        (default True)
     -proposal: select another proposal for testing. (default None)
     -visit: select another visit for testing default. (default None)
     """
@@ -146,6 +148,8 @@ def stitchScans(scans,
               'cake_map': None,
               'xrf_map': None,
               'x_xrd': None,
+              'azi': None,
+              'azi_exge': None,
               'energy': None,
               'Emax': None,
               'I0_map': None,
@@ -184,9 +188,11 @@ def stitchScans(scans,
             if XRD:
                 # import azimuthally integrated data
                 aname = DM.getAzintFname(fname)
-                data = DM.getAzintData(aname,
-                                       xrd_range = xrd_range,
-                                       azi_range = azi_range)
+                data = DM.getAzintData(
+                        aname,
+                        xrd_range=xrd_range,
+                        azi_range=azi_range
+                        )
                 if i == 0:
                     if data['q'] is not None:
                         x_xrd = data['q']
@@ -306,7 +312,6 @@ def stitchScans(scans,
         # if data are measured as "snake" format, flip every second line
         if XRF:
             xrf_map[1::2, :, :] = xrf_map[1::2, ::-1, :]
-            snitch['xrf_map'] = xrf_map
         if XRD:
             xrd_map[1::2, :, :] = xrd_map[1::2, ::-1, :]
             if XRD_cake:
@@ -330,5 +335,232 @@ def stitchScans(scans,
         xrd_map = xrd_map[:, :, np.min(xrd_map > 0, axis=(0, 1))]
         snitch['xrd_map'] = xrd_map
 
+    if XRF:
+        snitch['xrf_map'] = xrf_map
+
     # Giving out the stitches!
     return snitch
+
+
+def setup_h5_file(
+        filename: str,
+        attributes: dict,
+        groups: list = None,
+        ) -> None:
+
+    with h5py.File(filename, 'w') as af:
+        for group in attributes.keys():
+            if groups is None or group in groups:
+                h5group = af.create_group(group)
+                for attr in attributes[group]:
+                    h5group.attrs[attr[0]] = attr[1]
+
+
+def setup_h5_softlinks(
+        filename: str,
+        links: dict,
+        ) -> None:
+
+    with h5py.File(filename, 'a') as af:
+        for group in links.keys():
+            for key in links[group].keys():
+                af[links[group][key]] = h5py.SoftLink(key)
+
+def copy_h5_linking(
+        filename: str,
+        links: dict,
+        ) -> None:
+
+    with h5py.File(filename, 'a') as af:
+        for group in links.keys():
+            for key in links[group].keys():
+                af[links[group][key]] = af[key]
+
+def transpose_order(
+        shape: npt.ArrayLike,
+        trans: bool
+        ) -> npt.ArrayLike:
+    # Finds the permutation to put order as -1 1 0 2 3 4 ...
+    # Shape is the shape of the matrix to transpose
+    # trans (bool) is whether or not to transpose the matrix
+
+    if trans and len(shape) > 2:
+        trans_order = [len(shape)-1, 1, 0]
+        for i in range(2, len(shape)-1):
+            trans_order.append(i)
+    else:
+        trans_order = [i for i in range(len(shape))]
+
+    return trans_order
+
+def q_to_unit(q: bool) -> list:
+    if q:
+        unit = ['q', 'A-1']
+    else:
+        unit = ['tth', 'degrees']
+
+    return unit
+
+
+
+def save_maps(
+        maps: dict,
+        scans: list,
+        transpose_data: bool = True,
+        proposal: int = None,
+        visit: int = None,
+        ) -> None:
+
+    group_measurement = 'entry/measurement'
+    group_scans = 'scan_list'
+    group_xrd1d = 'entry/dataxrd1d'
+    group_xrd2d = 'entry/dataxrd2d'
+    group_xrf = 'entry/dataxrf'
+
+    h5string = h5py.string_dtype()
+
+    x_xrd = q_to_unit(maps['Q'])
+
+    snitch_keys = {
+            'x_map': f'{group_measurement}/x_map',
+            'y_map': f'{group_measurement}/y_map',
+            'azi': f'{group_measurement}/azi',
+            'x': f'{group_measurement}/x',
+            'y': f'{group_measurement}/y',
+            'xrd_map': f'{group_xrd1d}/xrd',
+            'cake_map': f'{group_xrd2d}/xrd',
+            'xrf_map': f'{group_xrf}/xrf',
+            'x_xrd': f'{group_measurement}/{x_xrd[0]}',
+            'energy': f'{group_measurement}/energy',
+            'Emax': f'{group_measurement}/Emax',
+            'I0_map': f'{group_measurement}/I0_map',
+            'Q': f'{group_measurement}/Q',
+            }
+
+    soft_links = {}
+    groups = [group_measurement]
+    if not maps['xrd_map'] is None:
+        groups.append(group_xrd1d)
+        soft_links[group_xrd1d] = {
+                snitch_keys['x']: f'{group_xrd1d}/x',
+                snitch_keys['y']: f'{group_xrd1d}/y',
+                snitch_keys['x_xrd']: f'{group_xrd1d}/{x_xrd[0]}',
+                }
+    if not maps['cake_map'] is None:
+        groups.append(group_xrd2d)
+        soft_links[group_xrd2d] = {
+                snitch_keys['x']: f'{group_xrd2d}/x',
+                snitch_keys['y']: f'{group_xrd2d}/y',
+                snitch_keys['x_xrd']: f'{group_xrd1d}/{x_xrd[0]}',
+                snitch_keys['azi']: f'{group_xrd2d}/azi',
+                }
+    if not maps['xrf_map'] is None:
+        groups.append(group_xrf)
+        soft_links[group_xrf] = {
+                snitch_keys['x']: f'{group_xrf}/x',
+                snitch_keys['y']: f'{group_xrf}/y',
+                snitch_keys['energy']: f'{group_xrf}/energy',
+                }
+
+    maps['x'] = np.mean(maps['x_map'], axis=1)
+    maps['y'] = np.mean(maps['y_map'], axis=0)
+
+    attributes = {
+            'entry': [
+                ['NX_class', 'NXentry'],
+                ],
+            group_xrd1d: [
+                ['NX_class', 'NXdata'],
+                ['interpretation', 'image'],
+                ['signal', 'xrd'],
+                ['axes', np.array(['x', 'y', x_xrd[0]], dtype=h5string)],
+                ],
+            group_xrd2d: [
+                ['NX_class', 'NXdata'],
+                ['interpretation', 'image'],
+                ['signal', 'xrd'],
+                ['axes', np.array(['x', 'y', 'azi', x_xrd[0]], dtype=h5string)],
+                ],
+            group_xrf: [
+                ['NX_class', 'NXdata'],
+                ['interpretation', 'image'],
+                ['signal', 'xrf'],
+                ['axes', np.array(['x', 'y', 'energy'], dtype=h5string)],
+                ],
+            group_measurement: [
+                ['NX_class', 'NXprocess'],
+                ],
+            }
+    units = {
+            'energy': 'keV',
+            'x_xrd': x_xrd[1],
+            'q': 'A-1',
+            'x': 'mm',
+            'y': 'mm',
+            }
+
+    for group in attributes.keys():
+        for attr in attributes[group]:
+            if attr[0] == 'axes':
+                dims = np.ones([3*i for i in range(len(attr[1]))]).shape
+                trans_order = transpose_order(
+                                dims,
+                                transpose_data)
+                attr[1] = attr[1][trans_order]
+
+    stitch_folder_name = os.path.dirname(
+            DM.findScan(
+                scans[0],
+                proposal=proposal,
+                visit=visit)).replace(
+                    'raw',
+                    'process/stitched_maps')
+
+    if not os.path.isdir(stitch_folder_name):
+        os.makedirs(stitch_folder_name)
+
+    stitch_file = os.path.join(
+            stitch_folder_name,
+            f'scan_{scans[0]}-{scans[-1]}.h5'
+            )
+    scan_filenames = np.array(
+            [DM.findScan(
+                scan,
+                proposal=proposal,
+                visit=visit
+                ) for scan in scans],
+            dtype=h5py.special_dtype(vlen=str)
+            )
+
+    setup_h5_file(stitch_file, attributes, groups=groups)
+
+    with h5py.File(stitch_file, 'a') as sf:
+        sf.create_dataset(
+                group_scans,
+                data=scan_filenames,
+                dtype=h5py.special_dtype(vlen=str))
+
+        for key in maps.keys():
+
+            if not maps[key] is None:
+
+                if not isinstance(maps[key], np.ndarray):
+                    sf.create_dataset(
+                            snitch_keys[key],
+                            data=maps[key]
+                            )
+                    continue
+
+                trans_order = transpose_order(
+                                maps[key].shape,
+                                transpose_data
+                                )
+
+                sf.create_dataset(
+                        snitch_keys[key],
+                        data=np.transpose(maps[key], trans_order)
+                        )
+                if key in units.keys():
+                    sf[snitch_keys[key]].attrs['unit'] = units[key]
+
+    copy_h5_linking(stitch_file, soft_links)
