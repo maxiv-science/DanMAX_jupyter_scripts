@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.2.0'
+version = '3.2.1'
 
 #use_dark_mode = True
 import os
@@ -12,7 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from cycler import cycler
 import scipy.optimize as sci_op
-import scipy.constants as sci_const
+#import scipy.constants as sci_const
 from IPython.utils import io
 from datetime import datetime
 try:
@@ -75,8 +75,8 @@ def reduceDic(d ,reduction_factor=1, start=None, end=None, axis=0, keys=[],copy_
 def keV2A(E):
     """Convert keV to Angstrom"""
     try:
-        h = sci_const.physical_constants['Planck constant in eV/Hz'][0]
-        lambd = h*sci_const.c/(E*10**3)*10**10
+        hc = 1.23984198e-06 # planck constant * speed of light (eV m)
+        lambd = hc/(E*10**3)*10**10
     except ZeroDivisionError:
         lambd = np.full(E.shape,0.0)
     return lambd
@@ -84,8 +84,8 @@ def keV2A(E):
 def A2keV(lambd):
     """Convert Angstrom to keV"""
     try:
-        h = sci_const.physical_constants['Planck constant in eV/Hz'][0]
-        E = h*sci_const.c/(lambd*10**3)*10**10*10**-3
+        hc = 1.23984198e-06 # planck constant * speed of light (eV m)
+        E = hc/(lambd*1e-10)*10**-3
     except ZeroDivisionError:
         E = np.full(lambd.shape,0.0)
     return E
@@ -340,7 +340,7 @@ def findAllScans(scan_type='any',descending=True,proposal=None,visit=None):
     return files
 
 
-def findScan(scan_id=None,proposal=None,visit=None,is_parallel):
+def findScan(scan_id=None,proposal=None,visit=None,is_parallel=False):
     """Return the path of a specified scan number. If no scan number is specified, return latest scan"""
     if not is_parallel:
         if scan_id == None:
