@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.2.1'
+version = '3.3.0'
 
 #use_dark_mode = True
 import os
@@ -38,6 +38,10 @@ except:
     print('Unable to load lib/integration.py')
 try:
     import lib.parallel as parallel
+except:
+    print('Unable to load lib/parallel.py')
+try:
+    import lib.fitting as fitting
 except:
     print('Unable to load lib/parallel.py')
     
@@ -146,7 +150,18 @@ def getCurrentProposal(proposal=None, visit=None):
         visit = visit_new
     return proposal, visit
 
-def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=None,is_parallel=False):
+def getCurrentProposalType(proposal_type=None, beamline=None):
+    """Return current proposal type and beamline
+    If proposal_type/beamline is provided it will pass it back"""
+    
+    if proposal_type != None and beamline != None:
+        return proposal_type, beamline
+
+    idx = os.getcwd().split('/').index('data')
+    proposal_type, beamline =  os.getcwd().split('/')[idx+1:idx+3]
+    return proposal_type, beamline
+    
+def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=None,is_parallel=False,proposal_type='visitors',beamline='danmax'):
     """
     Return the path to the latest /raw/*/*.h5 scan for the provided proposal and visit.
     Defaults to the current proposal directory of proposal and visit are not specified.
@@ -156,10 +171,11 @@ def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=N
     Use require_integrated = True to ensure that the returned scan has a valid integrated .h5 file.
     """
     proposal, visit = getCurrentProposal(proposal,visit)
+    proposal_type, beamline = getCurrentProposalType(proposal_type, beamline)
     if is_parallel:
         return parallel.findAllParallel(proposal=None,visit=None)[-1]
     #print(proposal, visit)
-    files = sorted(glob.glob(f'/data/visitors/danmax/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.getctime, reverse=True)
+    files = sorted(glob.glob(f'/data/{proposal_type}/{beamline}/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.getctime, reverse=True)
 
     for file in files:
         if not 'pilatus.h5' in file and not '_falconx.h5' in file:
@@ -191,7 +207,7 @@ def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=N
                 return file
             except OSError as err:
                 pass
-    print(f"No scan of type '{scan_type}' found in '/data/visitors/danmax/{proposal}/{visit}/raw/'")
+    print(f"No scan of type '{scan_type}' found in '/data/{proposal_type}/{beamline}/{proposal}/{visit}/raw/'")
     return None
 
 def getAzintFname(fname):
@@ -325,22 +341,23 @@ def appendScans(scans,
     return data, meta
 
 
-def findAllScans(scan_type='any',descending=True,proposal=None,visit=None):
+def findAllScans(scan_type='any',descending=True,proposal=None,visit=None,proposal_type='visitors',beamline='danmax'):
     """
     Return a sorted list of all scans in the current visit
     Use scan_type (str) to specify which scan type to search for, i.e. 'timescan', 'dscan', 'ascan', etc.
     """
     proposal, visit = getCurrentProposal(proposal,visit)
-    files = sorted(glob.glob(f'/data/visitors/danmax/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.basename, reverse=descending)
-    files = [f for f in files if not ('pilatus.h5' in f or '_falconx.h5' in f)]
+    proposal_type, beamline = getCurrentProposalType(proposal_type, beamline)
+    files = sorted(glob.glob(f'/data/{proposal_type}/{beamline}/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.basename, reverse=descending)
+    files = [f for f in files if not ('pilatus.h5' in f or '_falconx.h5' in f or '_orca.h5' in f or '_dxchange.h5' in f)]
     if scan_type != 'any':
         files = [f for f in files if scan_type in getScanType(f)]
     if len(files)<1:
-        print(f"No scans of type '{scan_type}' found in '/data/visitors/danmax/{proposal}/{visit}/raw/'")    
+        print(f"No scans of type '{scan_type}' found in '/data/{proposal_type}/{beamline}/{proposal}/{visit}/raw/'")    
     return files
 
 
-def findScan(scan_id=None,proposal=None,visit=None,is_parallel=False):
+def findScan(scan_id=None,proposal=None,visit=None,is_parallel=False,proposal_type='visitors',beamline='danmax'):
     """Return the path of a specified scan number. If no scan number is specified, return latest scan"""
     if not is_parallel:
         if scan_id == None:
@@ -350,7 +367,7 @@ def findScan(scan_id=None,proposal=None,visit=None,is_parallel=False):
         elif type(scan_id) == str:
             scan_id = 'scan-'+scan_id.strip().split('scan-')[-1][:4]
 
-        for sc in findAllScans(proposal=proposal,visit=visit):
+        for sc in findAllScans(proposal=proposal,visit=visit,proposal_type='visitors',beamline='danmax'):
             if scan_id in sc:
                 return sc
         print('Unable to find {} in {}/{}'.format(scan_id,*getCurrentProposal(proposal,visit)))
@@ -640,8 +657,8 @@ def getAzintData(fname,
             parameters:
                 fname - string
                 get_meta - bool flag (default = False)
-                xrd_range - list/tuple (default = None)
-                azi_range - list/tuple (default = None)
+                xrd_range - list/tuple of lower and upper radial scattering axis limit (default = None)
+                azi_range - list/tuple of lower and upper azimuthal scattering axis limit(default = None)
                 proposal - int (default = None)
                 visit - int (default = None)
             return:
@@ -655,6 +672,7 @@ def getAzintData(fname,
         aname = getAzintFname(fname)
     else:
         aname = fname
+        fname = aname.replace('process/azint','raw').replace('_pilatus_integrated.h5','.h5')
     # define output dictionary
     data = {
         'I': None,
@@ -707,7 +725,7 @@ def getAzintData(fname,
         'azi' 
         ]
 
-    # define ragne dictionary
+    # define range dictionary
     ranges = {
         'xrd': xrd_range,
         'azi': azi_range,
@@ -817,7 +835,24 @@ def getAzintData(fname,
             #print(f'Generating edges for {edge_key}, assuming an equidistant bin width of: {bin_width:.6f} unit({edge_key})')
             data[f'{edge_key}_edge'] = np.append(data[f'{edge_key}_edge'],data[f'{edge_key}_edge'][-1]+bin_width)
             data[f'{edge_key}_edge'] -= bin_width/2
+
+    meta_length = None
+    if os.path.isfile(fname):
+        try:
+            with h5py.File(fname,'r') as f:
+                keys = sorted(list(f['/entry/instrument'].keys()))
+                meta_length = f['/entry/instrument'][keys[0]+'/data'].shape[0]
+        except:
             
+            raise
+
+    if data['I'][:meta_length].shape[0]<data['I'].shape[0] and not meta_length is None:
+        print(f'Data size mismatch - cropped to {meta_length} frames')
+    
+    data['I'] = data['I'][:meta_length]
+    if not data['cake'] is None:
+        data['cake'] = data['cake'][:meta_length]
+    
     if get_meta:
         return data, meta
     else:
