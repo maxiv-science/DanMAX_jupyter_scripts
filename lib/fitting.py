@@ -184,7 +184,7 @@ def multiPeakFit(x,y,n,peaks=None,bgr_glob=None,verbose=True,x0s=None):
         # initial position guess
         # equidistant positions around the center of mass
         if x0s is None:
-            x0 = cen_x + (np.linspace(0,beta,n)-beta/2)
+            x0 = cen_x + (np.linspace(0,beta,n)-beta/2)* float(n>1)
         else:
             x0 = x0s
         

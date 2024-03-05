@@ -25,6 +25,10 @@ except:
 # Importing DanMAX libraries for specialized functionality
 # Done in try statements to catch different jupyter environments
 try:
+    from lib.misc import *
+except:
+    print('Unable to load lib/misc.py')
+try:
     import lib.mapping as mapping
 except:
     print('Unable to load lib/mapping.py')
@@ -44,81 +48,7 @@ try:
     import lib.fitting as fitting
 except:
     print('Unable to load lib/parallel.py')
-    
-def reduceArray(a,reduction_factor, axis=0):
-    """Reduce the size of an array by step-wise averaging"""
-    if a is None:
-        return None
-    if axis!=0:
-        a = np.swapaxes(a,0,axis)
-    step = reduction_factor
-    last_index = a.shape[0]-step
-    a = np.mean([a[i:last_index+i+1:step] for i in range(reduction_factor)],axis=0)
-    if axis!=0:
-        a = np.swapaxes(a,0,axis)
-    return a
 
-def reduceDic(d ,reduction_factor=1, start=None, end=None, axis=0, keys=[],copy_dic=True):
-    """Reduce the size of the specified arrays in a dictionary by step-wise averaging"""
-    default_keys = ['I', 'cake', 'I_error', 'cake_error','I0', 'time', 'temp', 'energy']
-    keys = list(set(default_keys+keys))
-    index = np.s_[start:end]
-    if reduction_factor==1 and start is None and end is None:
-        return d
-    if copy_dic:
-        d = d.copy()
-    for key in keys:
-        if key in d.keys() and not d[key] is None:
-            if reduction_factor>1:
-                d[key] = reduceArray(d[key][index],reduction_factor,axis=axis)
-            else:
-                d[key] = d[key][index]
-    return d
-
-
-def keV2A(E):
-    """Convert keV to Angstrom"""
-    try:
-        hc = 1.23984198e-06 # planck constant * speed of light (eV m)
-        lambd = hc/(E*10**3)*10**10
-    except ZeroDivisionError:
-        lambd = np.full(E.shape,0.0)
-    return lambd
-
-def A2keV(lambd):
-    """Convert Angstrom to keV"""
-    try:
-        hc = 1.23984198e-06 # planck constant * speed of light (eV m)
-        E = hc/(lambd*1e-10)*10**-3
-    except ZeroDivisionError:
-        E = np.full(lambd.shape,0.0)
-    return E
-
-def tth2Q(tth,E):
-    """Convert 2theta to Q. Provide the energy E in keV"""
-    try:
-        if len(E)>1:
-            E = np.mean(E)
-            print(f'More than one energy provided. Using average: {E:.3f} keV')
-    except TypeError:
-        pass
-    try:
-        return 4*np.pi*np.sin(tth/2*np.pi/180)/keV2A(E)
-    except ZeroDivisionError:
-        return np.full(tth.shape,0.0)
-    
-def Q2tth(Q,E):
-    """Convert Q to 2theta. Provide the energy E in keV"""
-    try:
-        if len(E)>1:
-            E = np.mean(E)
-            print(f'More than one energy provided. Using average: {E:.3f} keV')
-    except TypeError:
-        pass
-    try:
-        return 2*np.arcsin(Q*keV2A(E)/(4*np.pi))*180/np.pi
-    except ZeroDivisionError:
-        return np.full(Q.shape,0.0)
 
 def pi(engineer=False):
     if engineer:
@@ -176,7 +106,7 @@ def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=N
         return parallel.findAllParallel(proposal=None,visit=None)[-1]
     #print(proposal, visit)
     files = sorted(glob.glob(f'/data/{proposal_type}/{beamline}/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.getctime, reverse=True)
-
+    files = [f for f in files if not ('pilatus.h5' in f or '_falconx.h5' in f or '_orca.h5' in f or '_dxchange.h5' in f)]
     for file in files:
         if not 'pilatus.h5' in file and not '_falconx.h5' in file:
             # find a valid raw .h5 file
@@ -417,16 +347,6 @@ def getScan_id(fname):
     """Return the scan_id from a full file path"""
     return 'scan-'+fname.strip().split('scan-')[-1][:4]
     
-def getVmax(im):
-    """
-    Return vmax (int) corresponding to the first pixel value with zero counts
-    after the maximum value
-    """
-    im = im[~np.isnan(im)]
-    h = np.histogram(im,bins=int(np.max(im)) ,range=(1,int(np.max(im))+1), density=False)
-    first_zero = np.argmin(h[0][np.argmax(h[0]):])+np.argmax(h[0])
-    return first_zero
-
 def averageLargeScan(fname):
     """
     Return the average image of large scans
@@ -473,100 +393,6 @@ def getHottestPixel(fname):
     cps = max_counts/exposure
     print(f'Highest count rate in one frame: {cps:,.2f} cps')
     return cps
-
-        
-def singlePeakFit(x,y,verbose=True):
-    """
-    Performe a single peak gaussian fit
-    Return: amplitude, position, FWHM, background, y_calc
-    """
-    # Peak profile - in this case gaussian
-    def gauss(x,amp,x0,fwhm,bgr):
-        sigma = fwhm/(2*np.sqrt(2*np.log(2)))
-        return amp*np.exp(-(x-x0)**2/(2*sigma**2))+bgr
-
-    # initial position guess
-    pos = x[np.argmax(y)]
-
-    # initial background guess
-    bgr = (y[0]+y[-1])/2
-    
-    # initial amplitude guess
-    amp = np.nanmax(y)-bgr
-    
-    # Guess for sigma based on estimate of FWHM from array
-    fwhm = np.abs(pos-x[np.argmin(np.abs(y-(amp/2)))])
-    
-    # Assume convergence before fit
-    convergence = True
-
-    # Fit the peak
-    try:
-        popt,pcov = sci_op.curve_fit(gauss,
-                                     x,
-                                     y,
-                                     p0=[amp,pos,fwhm,bgr])
-    except RuntimeError:
-        if verbose:
-            print('sum(X) fit did not converge!')
-        convergence = False
-        popt = [np.nan]*4
-
-    amp,pos,fwhm,bgr = popt
-    sigma = fwhm/(2*np.sqrt(2*np.log(2)))
-    integral = np.sqrt(2*np.pi)*amp*np.abs(sigma)
-    
-    y_calc = gauss(x,amp,pos,fwhm,bgr)
-    
-    return amp,pos,fwhm,bgr,y_calc
-
-def sampleDisplacementCorrection(tth,sdd,d):
-    """
-    Two theta correction for sample displacement along the beam (flat detector)
-    Benjamin S. Hulbert and Waltraud M. Kriven - DOI: 10.1107/S1600576722011360
-    Parameters:
-        tth  - array - two theta values in degrees
-        sdd  - float - sample-to-detector-distance
-        d    - flaot - sample displacement, positive towards the detector
-    Return:
-        corr - array - angular correction in degrees such that 2th_corr = 2th-corr
-    """
-    corr = np.arctan(d*np.sin(2*tth*np.pi/180)/(2*(sdd-d*np.sin(tth*np.pi/180)**2)))*180/np.pi
-    return corr
-
-def edges(x):
-    """Return the bin edges for equidistant bin centers"""
-    dx = np.mean(np.diff(x))
-    return np.append(x,x[-1]+dx)-dx/2
-
-def rebin_1d(x,y,bins=None):
-    """
-    Re-bin non-equidistant data to equidistant data
-        parameters
-            x     - Original non-equidistant x-values (m)
-            y     - Original non-equidistant y-values (n,m) or (m)
-            bins  - (optional) Target equidistant bins
-                     if not provided, bins will be generated
-                     from x.min() to x.max() with shape (m)
-        return
-            bins  - Equidistant bins (k)
-            y_bin - Binned y-values. Empty bins are filled
-                    by linear interpolation. (n,k) or (1,k)
-    """
-    # unless provided, generate equidistant bin centers from x.min() to x.max()
-    if bins is None:
-        bins = np.linspace(x.min(),x.max(),x.shape[0])
-    # calculate bin edges assuming equidistant bins
-    bins_edge = edges(bins)
-    y_shape = y.shape
-    y = np.atleast_2d(y)
-    # re-bin data
-    bin_res = binned_statistic(x,y,bins=bins_edge, statistic='mean')
-    y_bin = bin_res.statistic
-    # fill empty bins by interpolation
-    for i,y in enumerate(y_bin):
-        y_bin[i] = np.interp(bins,bins[~np.isnan(y)],y[~np.isnan(y)])
-    return bins, y_bin
 
 def getMotorSteps(fname,proposal=None,visit=None):
     """
