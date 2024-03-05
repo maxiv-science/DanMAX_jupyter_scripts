@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.0.0'
+version = '3.3.0'
 
 #use_dark_mode = True
 import os
@@ -12,7 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from cycler import cycler
 import scipy.optimize as sci_op
-import scipy.constants as sci_const
+#import scipy.constants as sci_const
 from IPython.utils import io
 from datetime import datetime
 try:
@@ -27,19 +27,23 @@ except:
 try:
     import lib.mapping as mapping
 except:
-    print('Change to HDF5 server to load all modules')
+    print('Unable to load lib/mapping.py')
 try:
     import lib.texture as texture
 except:
-    print('Change to HDF5 server to load all modules')
+    print('Unable to load lib/texture.py')
 try:
     import lib.integration as integration
 except:
-    print('Change to HDF5 server to load all modules')
+    print('Unable to load lib/integration.py')
 try:
     import lib.parallel as parallel
 except:
-    print('Change to HDF5 server to load all modules')
+    print('Unable to load lib/parallel.py')
+try:
+    import lib.fitting as fitting
+except:
+    print('Unable to load lib/parallel.py')
     
 def reduceArray(a,reduction_factor, axis=0):
     """Reduce the size of an array by step-wise averaging"""
@@ -75,8 +79,8 @@ def reduceDic(d ,reduction_factor=1, start=None, end=None, axis=0, keys=[],copy_
 def keV2A(E):
     """Convert keV to Angstrom"""
     try:
-        h = sci_const.physical_constants['Planck constant in eV/Hz'][0]
-        lambd = h*sci_const.c/(E*10**3)*10**10
+        hc = 1.23984198e-06 # planck constant * speed of light (eV m)
+        lambd = hc/(E*10**3)*10**10
     except ZeroDivisionError:
         lambd = np.full(E.shape,0.0)
     return lambd
@@ -84,8 +88,8 @@ def keV2A(E):
 def A2keV(lambd):
     """Convert Angstrom to keV"""
     try:
-        h = sci_const.physical_constants['Planck constant in eV/Hz'][0]
-        E = h*sci_const.c/(lambd*10**3)*10**10*10**-3
+        hc = 1.23984198e-06 # planck constant * speed of light (eV m)
+        E = hc/(lambd*1e-10)*10**-3
     except ZeroDivisionError:
         E = np.full(lambd.shape,0.0)
     return E
@@ -146,7 +150,18 @@ def getCurrentProposal(proposal=None, visit=None):
         visit = visit_new
     return proposal, visit
 
-def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=None):
+def getCurrentProposalType(proposal_type=None, beamline=None):
+    """Return current proposal type and beamline
+    If proposal_type/beamline is provided it will pass it back"""
+    
+    if proposal_type != None and beamline != None:
+        return proposal_type, beamline
+
+    idx = os.getcwd().split('/').index('data')
+    proposal_type, beamline =  os.getcwd().split('/')[idx+1:idx+3]
+    return proposal_type, beamline
+    
+def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=None,is_parallel=False,proposal_type='visitors',beamline='danmax'):
     """
     Return the path to the latest /raw/*/*.h5 scan for the provided proposal and visit.
     Defaults to the current proposal directory of proposal and visit are not specified.
@@ -156,8 +171,11 @@ def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=N
     Use require_integrated = True to ensure that the returned scan has a valid integrated .h5 file.
     """
     proposal, visit = getCurrentProposal(proposal,visit)
+    proposal_type, beamline = getCurrentProposalType(proposal_type, beamline)
+    if is_parallel:
+        return parallel.findAllParallel(proposal=None,visit=None)[-1]
     #print(proposal, visit)
-    files = sorted(glob.glob(f'/data/visitors/danmax/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.getctime, reverse=True)
+    files = sorted(glob.glob(f'/data/{proposal_type}/{beamline}/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.getctime, reverse=True)
 
     for file in files:
         if not 'pilatus.h5' in file and not '_falconx.h5' in file:
@@ -189,7 +207,7 @@ def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=N
                 return file
             except OSError as err:
                 pass
-    print(f"No scan of type '{scan_type}' found in '/data/visitors/danmax/{proposal}/{visit}/raw/'")
+    print(f"No scan of type '{scan_type}' found in '/data/{proposal_type}/{beamline}/{proposal}/{visit}/raw/'")
     return None
 
 def getAzintFname(fname):
@@ -222,6 +240,9 @@ def getMetaData(fname,custom_keys={},relative=True,proposal=None,visit=None):
     """
     if fname.startswith('scan-'):
         fname = findScan(fname,proposal,visit)
+
+    if 'master.h5' in fname:
+        fname = fname.replace('raw', 'process/azint').replace('.h5','_meta.h5')
         
     data = {'I0':None,
             'time':None,
@@ -268,6 +289,8 @@ def getMetaData(fname,custom_keys={},relative=True,proposal=None,visit=None):
 
 def getMetaDic(fname):
     """Return dictionary of available meta data, reusing the .h5 dictionary keys."""
+    if 'master.h5' in fname:
+        fname = fname.replace('raw', 'process/azint').replace('.h5','_meta.h5')
     data = {}
     with h5py.File(fname,'r') as f:
         for key in f['/entry/instrument/'].keys():
@@ -318,34 +341,48 @@ def appendScans(scans,
     return data, meta
 
 
-def findAllScans(scan_type='any',descending=True,proposal=None,visit=None):
+def findAllScans(scan_type='any',descending=True,proposal=None,visit=None,proposal_type='visitors',beamline='danmax'):
     """
     Return a sorted list of all scans in the current visit
     Use scan_type (str) to specify which scan type to search for, i.e. 'timescan', 'dscan', 'ascan', etc.
     """
     proposal, visit = getCurrentProposal(proposal,visit)
-    files = sorted(glob.glob(f'/data/visitors/danmax/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.basename, reverse=descending)
-    files = [f for f in files if not ('pilatus.h5' in f or '_falconx.h5' in f)]
+    proposal_type, beamline = getCurrentProposalType(proposal_type, beamline)
+    files = sorted(glob.glob(f'/data/{proposal_type}/{beamline}/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.basename, reverse=descending)
+    files = [f for f in files if not ('pilatus.h5' in f or '_falconx.h5' in f or '_orca.h5' in f or '_dxchange.h5' in f)]
     if scan_type != 'any':
         files = [f for f in files if scan_type in getScanType(f)]
     if len(files)<1:
-        print(f"No scans of type '{scan_type}' found in '/data/visitors/danmax/{proposal}/{visit}/raw/'")    
+        print(f"No scans of type '{scan_type}' found in '/data/{proposal_type}/{beamline}/{proposal}/{visit}/raw/'")    
     return files
 
 
-def findScan(scan_id=None,proposal=None,visit=None):
+def findScan(scan_id=None,proposal=None,visit=None,is_parallel=False,proposal_type='visitors',beamline='danmax'):
     """Return the path of a specified scan number. If no scan number is specified, return latest scan"""
-    if scan_id == None:
-        return getLatestScan()
-    elif type(scan_id) == int:
-        scan_id = f'scan-{scan_id:04d}'
-    elif type(scan_id) == str:
-        scan_id = 'scan-'+scan_id.strip().split('scan-')[-1][:4]
+    if not is_parallel:
+        if scan_id == None:
+            return getLatestScan()
+        elif type(scan_id) == int:
+            scan_id = f'scan-{scan_id:04d}'
+        elif type(scan_id) == str:
+            scan_id = 'scan-'+scan_id.strip().split('scan-')[-1][:4]
 
-    for sc in findAllScans(proposal=proposal,visit=visit):
-        if scan_id in sc:
-            return sc
-    print('Unable to find {} in {}/{}'.format(scan_id,*getCurrentProposal(proposal,visit)))
+        for sc in findAllScans(proposal=proposal,visit=visit,proposal_type='visitors',beamline='danmax'):
+            if scan_id in sc:
+                return sc
+        print('Unable to find {} in {}/{}'.format(scan_id,*getCurrentProposal(proposal,visit)))
+
+    else:
+        scans = parallel.findAllParallel(proposal=None,visit=None)
+        if scan_id is None:
+            index = -1
+        elif type(scan_id) == int:
+            index = scan_id
+        elif type(scan_id) == str:
+            if scan_id in scans:
+                return scan_id
+            print('Unable to find {} in {}/{}'.format(scan_id,*getCurrentProposal(proposal,visit)))
+        return scans[index]
     
     
 def getScanType(fname,proposal=None,visit=None):
@@ -620,8 +657,8 @@ def getAzintData(fname,
             parameters:
                 fname - string
                 get_meta - bool flag (default = False)
-                xrd_range - list/tuple (default = None)
-                azi_range - list/tuple (default = None)
+                xrd_range - list/tuple of lower and upper radial scattering axis limit (default = None)
+                azi_range - list/tuple of lower and upper azimuthal scattering axis limit(default = None)
                 proposal - int (default = None)
                 visit - int (default = None)
             return:
@@ -635,6 +672,7 @@ def getAzintData(fname,
         aname = getAzintFname(fname)
     else:
         aname = fname
+        fname = aname.replace('process/azint','raw').replace('_pilatus_integrated.h5','.h5')
     # define output dictionary
     data = {
         'I': None,
@@ -687,7 +725,7 @@ def getAzintData(fname,
         'azi' 
         ]
 
-    # define ragne dictionary
+    # define range dictionary
     ranges = {
         'xrd': xrd_range,
         'azi': azi_range,
@@ -721,6 +759,12 @@ def getAzintData(fname,
                                 meta[key][subkey] = af[group_meta][key][subkey][()]
                             else:
                                 meta[key][subkey] = af[group_meta][key][subkey][:]
+
+                # check for poni filename attribute
+                if 'filename' in af[group_meta]['input/poni'].attrs.keys():
+                    meta['input']['poni_filename'] = af[group_meta]['input/poni'].attrs['filename']
+
+            
             # update needed rois
             for key in range_keys:
                 if data_keys[key] in af:
@@ -791,7 +835,24 @@ def getAzintData(fname,
             #print(f'Generating edges for {edge_key}, assuming an equidistant bin width of: {bin_width:.6f} unit({edge_key})')
             data[f'{edge_key}_edge'] = np.append(data[f'{edge_key}_edge'],data[f'{edge_key}_edge'][-1]+bin_width)
             data[f'{edge_key}_edge'] -= bin_width/2
+
+    meta_length = None
+    if os.path.isfile(fname):
+        try:
+            with h5py.File(fname,'r') as f:
+                keys = sorted(list(f['/entry/instrument'].keys()))
+                meta_length = f['/entry/instrument'][keys[0]+'/data'].shape[0]
+        except:
             
+            raise
+
+    if data['I'][:meta_length].shape[0]<data['I'].shape[0] and not meta_length is None:
+        print(f'Data size mismatch - cropped to {meta_length} frames')
+    
+    data['I'] = data['I'][:meta_length]
+    if not data['cake'] is None:
+        data['cake'] = data['cake'][:meta_length]
+    
     if get_meta:
         return data, meta
     else:
@@ -887,7 +948,16 @@ def darkMode(use=True,style_dic={'figure.figsize':'small'}):
     Use style_dic={'figure.figsize':'small'/'medium'/'large'} to quickly change figure size
     Use plt.style.use('default') to revert to the matplotlib default style
     """
-    
+    # dictionary of short hand keywords
+    short_hand = {'size' :'figure.figsize',
+                  'grid' : 'axes.grid'}
+    # replace short hand keys with full name keywords
+    keys = list(style_dic.keys())
+    for key in keys:
+        if key in short_hand.keys():
+            style_dic[short_hand[key]]=style_dic[key]
+            style_dic.pop(key)
+
     if 'figure.figsize' in style_dic and type(style_dic['figure.figsize']) == str:
         if style_dic['figure.figsize'].lower() == 'small':
             style_dic['figure.figsize'] = [8.533,4.8]
