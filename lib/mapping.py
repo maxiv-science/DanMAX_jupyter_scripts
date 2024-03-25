@@ -159,7 +159,11 @@ def stitchScans(scans,
     with h5py.File(fname, 'r') as f:
         if XRF:
             # import falcon x data
-            Emax = f['/entry/instrument/pilatus/energy'][()]*10**-3  # keV
+            start_positioners = '/entry/instrument/start_positioners'
+            Emax = min(
+                    abs(f[f'{start_positioners}/hdcm_energy'][()]),
+                    abs(f[f'{start_positioners}/mlm_energy'][()])
+                    )
             # Energy calibration (Conversion of chanels to energy)
             channels = np.arange(4096)
             if len(xrf_calibration) == 2:
@@ -240,7 +244,9 @@ def stitchScans(scans,
             #  This will not always be the case, then unpack the shape
             if XRF or XRD:
                 if np.prod(map_shape) != np.prod(data_shape):
-                    map_shape = (map_shape[0]-1, map_shape[1]-1)
+                    map_shape = (map_shape[0]-1, map_shape[1])
+                if np.prod(map_shape) != np.prod(data_shape):
+                    map_shape = (map_shape[0], map_shape[1]-1)
 
             # Check if I0 exists
             if I0 is None:
