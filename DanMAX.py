@@ -47,7 +47,7 @@ except:
 try:
     import lib.fitting as fitting
 except:
-    print('Unable to load lib/parallel.py')
+    print('Unable to load lib/fitting.py')
 
 
 def pi(engineer=False):
