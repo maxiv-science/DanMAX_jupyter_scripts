@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.3.1'
+version = '3.4.0'
 
 #use_dark_mode = True
 import os
@@ -48,7 +48,10 @@ try:
     import lib.fitting as fitting
 except:
     print('Unable to load lib/fitting.py')
-
+try:
+    import lib.archiver_danmax as archiver
+except:
+    print('Unable to load lib/archiver_danmax.py')
 
 def pi(engineer=False):
     if engineer:
