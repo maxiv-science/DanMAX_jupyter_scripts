@@ -61,7 +61,7 @@ def getTimeStamps(ts):
     if np.isscalar(ts):
         ts = np.array([ts])
     # set offset (daylight saving) based on first index
-    offsetTZ = timezone.localize(datetime.utcfromtimestamp(t[0])).utcoffset()
+    offsetTZ = timezone.localize(datetime.utcfromtimestamp(ts[0])).utcoffset()
     ts = np.array([f'{datetime.utcfromtimestamp(t)+offsetTZ}' for t in ts])
     return ts
 
