@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.3.0'
+version = '3.3.1'
 
 #use_dark_mode = True
 import os
