@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.4.0'
+version = '3.5.0'
 
 #use_dark_mode = True
 import os
@@ -52,7 +52,7 @@ try:
     import lib.archiver_danmax as archiver
 except:
     print('Unable to load lib/archiver_danmax.py')
-
+    
 def pi(engineer=False):
     if engineer:
         return 3.
