@@ -369,3 +369,43 @@ def parseCircleGaussFit(fit):
 def timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+
+def fitLine(fun, x, line, mask_line, idx=None, verbose=False):
+    """
+    Fits every dataset in line using th  function fun with c values c and y_observed y_obs
+    returns an array of results from the fit line.
+
+    Parameters:
+    fun       - function to use for fitting, should take the parameters x,y_obs
+    x         - x values for fit, shape(n,)
+    line      - array of observed y values. shape(m,n)
+    mask_line - array of 0 and 1. 1 means point will be fitted, 0 means it will not, shape(m,)
+    idx       - (optional) the index for parallel computations of multiple lines.
+    verbose   - (optional) print statements throughout the process
+    
+    Returns:
+    idx       - (optional) if idx has been set it will be returned.
+    results   - array of the results of the fits, shape(n,)
+    """
+
+    results = [None]*line.shape[0]
+    to_fit = np.sum(mask_line)
+    fitted = 0
+    if verbose:
+        print(f"Fitting {to_fit} points")
+
+    for i, y_obs in enumerate(line):
+        if not mask_line[i]:
+            continue
+        results[i] = fun(x,y_obs)
+        fitted += 1 
+        if verbose:
+            print(f'{timestamp()} -- Done fitting {int(100*fitted/to_fit):03d}%',end='\r')
+    if verbose:
+        print(f'{timestamp()} -- Completed fitting')
+
+    if idx is None:
+        return results
+    else:
+        return idx, results
+
