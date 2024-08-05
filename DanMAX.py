@@ -95,6 +95,41 @@ def getCurrentProposalType(proposal_type=None, beamline=None):
     idx = cwd.split('/').index('data')
     proposal_type, beamline =  cwd.split('/')[idx+1:idx+3]
     return proposal_type, beamline
+
+def getProposalScans(proposal_type=None, beamline=None,proposal=None, visit=None):
+    """Get scan directory for the current proposal
+    """
+    proposal_type, beamline = getCurrentProposalType(proposal_type, beamline)
+    proposal, visit = getCurrentProposal(proposal, visit)
+    
+    process_folder = f'/data/{proposal_type}/{beamline}/{proposal}/{visit}/process'
+    dictionary_file = f'{process_folder}/sample_dictionary.json'
+
+    if not os.path.isfile(dictionary_file):
+        print(f'There is no scan_dictionary, run the dictionary creator first!!!')
+        return None
+
+    with open(dictionary_file,'r') as df:
+        return json.load(df)
+
+def saveProposalScans(scan_dictionary,proposal_type=None, beamline=None,proposal=None, visit=None):
+    """save scan directory for the current proposal
+    Takes a dictionary and saves it as a json file
+    """
+
+    proposal_type, beamline = getCurrentProposalType(proposal_type, beamline)
+    proposal, visit = getCurrentProposal(proposal, visit)
+    
+    process_folder = f'/data/{proposal_type}/{beamline}/{proposal}/{visit}/process'
+    
+    if not os.path.isdir(process_folder):
+        os.makedirss(process_folder)
+        os.chmod(process_folder,0o770)
+
+    dictionary_file = f'{process_folder}/sample_dictionary.json'
+    with open(dictionary_file,'w') as df:
+        json.dump(scan_dictionary, df)
+
     
 def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=None,is_parallel=False,proposal_type='visitors',beamline='danmax'):
     """
