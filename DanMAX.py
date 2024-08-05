@@ -319,7 +319,7 @@ def findAllScans(scan_type='any',descending=True,proposal=None,visit=None,propos
     proposal, visit = getCurrentProposal(proposal,visit)
     proposal_type, beamline = getCurrentProposalType(proposal_type, beamline)
     files = sorted(glob.glob(f'/data/{proposal_type}/{beamline}/{proposal}/{visit}/raw/**/*.h5', recursive=True), key = os.path.basename, reverse=descending)
-    files = [f for f in files if not ('pilatus.h5' in f or '_falconx.h5' in f or '_orca.h5' in f or '_dxchange.h5' in f)]
+    files = [f for f in files if not ('pilatus.h5' in f or '_falconx.h5' in f or '_orca.h5' in f or '_dxchange.h5' in f or '_xspress3-dtc-2d' in f)]
     if scan_type != 'any':
         files = [f for f in files if scan_type in getScanType(f)]
     if len(files)<1:
@@ -585,11 +585,11 @@ def getAzintData(fname,
 
 
     #define range keys
-    range_keys = [
-        'q',
-        'tth',
-        'azi' 
-        ]
+    range_keys = {
+        'q':'xrd',
+        'tth':'xrd',
+        'azi':'azi' 
+        }
 
     # define range dictionary
     ranges = {
@@ -632,15 +632,26 @@ def getAzintData(fname,
 
             
             # update needed rois
-            for key in range_keys:
+            for key in range_keys.keys():
                 if data_keys[key] in af:
                     data_key = key
-                    if key == 'q' or key == 'tth':
-                        data_key = key
-                        key = 'xrd'
+                    key = range_keys[key]
 
+                    # Redifine the rois to a range, hdf5 doesn't take 2 boolean lists.
                     if ranges[key] is not None:
                         rois[key] = (af[data_keys[data_key]][:] > ranges[key][0]) & (af[data_keys[data_key]][:] < ranges[key][1])
+                        for i in range(len(rois[key])):
+                            if rois[key][i]:
+                                if i == 0:
+                                    i = None
+                                break
+                        for j in range(-1,-len(rois[key]),-1):
+                            if rois[key][j]:
+                                j=j+1
+                                if j == 0:
+                                    j = None
+                                break
+                        rois[key] = np.s_[i:j]
             # read integrated data
             for key in data.keys():
                 if data_keys[key] in af:
@@ -651,17 +662,31 @@ def getAzintData(fname,
                         data[key] = af[data_keys[key]][:,rois['azi'],rois['xrd']]
                     elif len(af[data_keys[key]].shape)>1:
                         data[key] = af[data_keys[key]][:,rois['xrd']]
+                    elif  key in range_keys.keys() and  ranges[range_keys[key]] is not None: 
+                       data[key] = af[data_keys[key]][rois[range_keys[key]]]
                     else:
                         data[key] = af[data_keys[key]][:]
         else:
             # update needed rois
-            for key in range_keys:
+            for key in range_keys.keys():
                 if data_keys_old[key] in af:
                     data_key = key
-                    if key == 'q' or key == 'tth':
-                        key = 'xrd'
+                    key = range_keys[key]
                     if ranges[key] is not None:
                         rois[key] = (af[data_keys[data_key]] > ranges[key][0]) & (af[data_keys[data_key]] < ranges[key][1])
+
+                        for i in range(len(rois[key])):
+                            if rois[key][i]:
+                                if i == 0:
+                                    i = None
+                                break
+                        for j in range(-1,-len(rois[key]),-1):
+                            if rois[key][j]:
+                                j=j+1
+                                if j == 0:
+                                    j = None
+                                break
+                        rois[key] = np.s_[i:j]
 
             ### old format ###,
             for key in data_keys_old.keys():
@@ -680,6 +705,8 @@ def getAzintData(fname,
                         data[key]=af[data_keys_old[key]][:,rois['azi'],rois['xrd']]
                     elif len(af[data_keys_old[key]].shape) > 1:
                         data[key]=af[data_keys_old[key]][:,rois['xrd']]
+                    elif  key in range_keys.keys() and  ranges[range_keys[key]] is not None: 
+                       data[key] = af[data_keys[key]][rois[range_keys[key]]]
                     else:
                         data[key]=af[data_keys_old[key]][:]
             if get_meta:
@@ -695,8 +722,8 @@ def getAzintData(fname,
     for edge_key in ['q', 'tth', 'azi']:
         #Check if the slot was filled in in the first place
         if (type(data[f'{edge_key}']) != type(None)) and (type(data[f'{edge_key}_edge']) == type(None)):
-            
             data[f'{edge_key}_edge'] = data[f'{edge_key}']
+
             bin_width = np.nanmean(np.abs(np.diff(data[f'{edge_key}'])))
             #print(f'Generating edges for {edge_key}, assuming an equidistant bin width of: {bin_width:.6f} unit({edge_key})')
             data[f'{edge_key}_edge'] = np.append(data[f'{edge_key}_edge'],data[f'{edge_key}_edge'][-1]+bin_width)
