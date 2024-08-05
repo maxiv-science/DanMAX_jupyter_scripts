@@ -409,3 +409,151 @@ def fitLine(fun, x, line, mask_line, idx=None, verbose=False):
     else:
         return idx, results
 
+def fitMesh(fun, x, mesh, mask, parallel=True, nworkers=8,verbose=False):
+    """
+    Fits every dataset in a mesh of data, by fitting the individual lines of the mesh.
+    Parameters:
+    fun       - function to use for fitting the data. function should take x, y_obs
+    x         - x-values to use for the fitting, shape(n,).
+    mesh      - mesh of observed values. shape(o,m,n).
+    mask      - mesh of 1 and 0. 1 will be fitted, 0 skipped. shape(o,m)
+    prallel   - (optional) wheather to fit in parallel or not.
+    nworkers  - (optional) number of workers to use for fitting.
+    verbose   - (optional) print statement throughout the process
+    
+    Returns:
+    Results   - mesh of results from fun shape(o,m), every entry can be result or None
+    """
+
+    results = [[None]*mask.shape[1]]*mask.shape[0]
+    n_lines = mesh.shape[0]
+    if parallel:
+        Steve = []
+        with mp.Pool(nworkers) as pool:
+            if verbose:
+                print(f'{timestamp()} -- submitting jobs')
+            for idx in range(n_lines):
+                Steve.append(pool.apply_async(
+                        fitLine,
+                        args=(fun,
+                              x,
+                              mesh[idx,:],
+                              mask[idx,:],
+                              idx)))
+            if verbose:
+                print(f'{timestamp()} -- submitted jobs')
+
+            for idx in range(n_lines):
+                res = Steve[idx].get()
+                results[res[0]] = res[1] 
+
+                if verbose:
+                    print(f'{timestamp()} -- completed {int(idx/n_lines*100):03d}% of lines',end='\r')
+
+            if verbose:
+                print(f'{timestamp()} -- Fitting completed.')
+    else:
+        if verbose:
+            print(f'{timestamp()} -- Starting fittng.')
+        for idx in range(n_lines):
+            results[idx] = fitLine(fun,x,mesh[idx,:])
+            if verbose:
+                print(f'{timestamp()} -- completed {int(idx/n_lines*100):03d}% of lines')
+        if verbose:
+            print(f'{timestamp()} -- Completed fittng.')
+
+    return results
+
+
+
+def parseFitLine(fun, fitline, idx=None, verbose=False):
+    '''
+    Parses a line of fits from fitlines to have an ndarray with all parameterss and a list of their names.
+    
+    Parameters:
+    fun     - function for parsing a single result from the function used to fittting. returns np.ndarray of values and a list of names. 
+    fitline - result of running fitLine one the data
+    idx     - Parameter for parallel calls. Will be returned if it iss not none.
+    verbose - Flag for whether to print progress 
+    '''
+    found_shape = False
+    for i,point in enumerate(fitline):
+        if point is None:
+            continue
+        res,names = fun(point)
+        if res is None:
+            continue
+        if not found_shape:
+            found_shape = True
+            result = np.zeros(( len(fitline), len(res) ))
+        result[i,:] = res
+    if not found_shape:
+        result = None
+
+    if idx is not None:
+        return idx, result
+    return result
+
+def parseFitMesh(fun, fitmesh, parallel=True, nworkers=8, verbose=False):
+    '''
+    Parses the fitmesh from fitmesh to have a matrix with all parameters and a list of their names 
+    
+    Parameters:
+    fun         - function to use for parsing a data point. Take a result of the function used for the fit. returns np.ndarray of values, and a list of their names.
+    fitmesh     - list of lists of fit results and none. output of fitMesh function.
+    '''
+
+    def _find_completed_fit(fitmesh):
+        for i in fitmesh:
+            for j in i:
+                if j is None:
+                    continue
+                res, names = fun(j)
+                if res is None:
+                    continue
+                return res, names
+        return None,names
+
+    res,names = _find_completed_fit(fitmesh)   
+
+    results = np.zeros(( len(fitmesh), len(fitmesh[0]), len(names) ))
+    n_lines = results.shape[0]
+    if parallel:
+        Steve = []
+        with mp.Pool(nworkers) as pool:
+            if verbose:
+                print(f'{timestamp()} -- submitting jobs')
+            for idx in range(n_lines):
+                Steve.append(pool.apply_async(
+                        parseFitLine,
+                        args=(fun,
+                              fitmesh[idx],
+                              idx)))
+            if verbose:
+                print(f'{timestamp()} -- submitted jobs')
+
+            for idx in range(n_lines):
+                res = Steve[idx].get()
+                if res[1] is not None: 
+                    results[res[0],:,:] = res[1] 
+
+                if verbose:
+                    print(f'{timestamp()} -- completed {int(idx/n_lines*100):03d}% of lines',end='\r')
+
+            if verbose:
+                print(f'{timestamp()} -- Parsing completed.')
+    else:
+        if verbose:
+            print(f'{timestamp()} -- Starting parsing.')
+        for idx in range(n_lines):
+            res = parseFitLine(fun,fitmesh[idx])
+            if res is not None:
+                results[idx,:,:] = res
+            if verbose:
+                print(f'{timestamp()} -- completed {int(idx/n_lines*100):03d}% of lines')
+        if verbose:
+            print(f'{timestamp()} -- Completed parsing.')
+
+    return results, names
+
+
