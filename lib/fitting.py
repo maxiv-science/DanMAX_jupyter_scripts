@@ -275,3 +275,95 @@ def multiPeakFit(x,y,n,peaks=None,bgr_glob=None,verbose=True,x0s=None):
                 print(f'{keys[i]} and {keys[i+1]} may have switched place')
     
     return peaks, bgr_glob
+
+def circleGaussFit(chi, y, verbose=False): 
+    """
+    Parameters
+    chi     - chi values in degrees
+    y       - y values
+    verbose - boolean, verbose
+    
+    returns -> list of peak parameters.
+    """
+
+    use = ~np.isnan(y)
+    chi = chi[use]
+    y = y[use]
+    guess = [0]*4
+
+    guess[3] = np.nanmax(np.nanmin(y),0)
+    guess[0] = np.nanmax(y)-guess[3]
+    guess[1] = chi[np.nanargmax(y)]
+    guess[2] = 0.1
+    
+    if guess[1] > np.pi:
+        guess[1] -= np.pi
+        
+    lower = [0, 0, 0.01, 0]
+    upper = [np.nanmax(y), np.pi,np.pi/5,np.nanmax(y)]
+
+    for i,g in enumerate(guess):
+        if g > upper[i]:
+            guess[i] = upper[i]
+        if g < lower[i]:
+            guess[i] = lower[i]
+
+    bounds = (lower, upper)
+
+    if verbose:
+        print(f'Guess is: {guess}')
+        print(f'Bounds are: {bounds}')
+    
+    def _circleGaussRes(p, chi, y):
+        """
+        Computes the residual between the guess paramters p and the test data y
+        Parameters:
+        chi - chi values in degrees
+        y   - intensity in arbritary units
+        """
+        return (gaussCircle(chi, *p) - y)**2
+
+    if verbose:
+        print('Starting fit')
+
+    res_lsq = sci_op.least_squares(
+            fun=_circleGaussRes,
+            x0=guess,
+            bounds=bounds,
+            args=(chi,y))
+    if verbose:
+        print(f'Fit completed:\n\t chi0: {res_lsq.x[1]}\n\t A: {res_lsq.x[0]}\n\t sigma: {res_lsq.x[2]}\n\t bkg: {res_lsq.x[3]}')
+    return res_lsq
+
+def parseCircleGaussFit(fit):
+    '''
+    Parses the result from circleGaussFit.
+    Returns an nd array of parameters and a list of their names if fit successful otherwise None.
+    Parameters:
+    fit - fit from circleGaussFit.
+    '''
+
+
+    names = ['H','DoO','I_tot','I_ori','I_rand', 'FWHM', 'a', 'chi0', 'sigma','bkg']
+
+    if not fit.success:
+        return None,names
+
+    result = np.zeros((10,))
+
+    fit_params = np.array(fit.x)
+    result[6:10] = fit_params
+
+    result[0] = fit_params[1]/np.pi
+    result[3] = 2*np.sqrt(2*np.pi)*np.abs(fit_params[0]*fit_params[2])
+    result[4] = fit_params[3] * 2 * np.pi
+    result[1] = result[3]/(result[3]+result[4])
+    result[2] = (result[3]+result[4])
+    result[5] = 4.29193*fit_params[2]
+
+    return result, names
+
+
+
+
+
