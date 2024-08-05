@@ -2,12 +2,13 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.5.0'
+version = '3.5.1'
 
 #use_dark_mode = True
 import os
 import h5py
 import glob
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from cycler import cycler
@@ -75,8 +76,9 @@ def getCurrentProposal(proposal=None, visit=None):
     if proposal != None and visit != None:
         return proposal, visit
 
-    idx = os.getcwd().split('/').index('danmax')
-    proposal_new, visit_new =  os.getcwd().split('/')[idx+1:idx+3]
+    cwd = os.getcwd().replace('gpfs/offline1','data')
+    idx = cwd.split('/').index('danmax')
+    proposal_new, visit_new =  cwd.split('/')[idx+1:idx+3]
     if proposal == None:
         proposal = proposal_new
     if visit == None:
@@ -89,9 +91,9 @@ def getCurrentProposalType(proposal_type=None, beamline=None):
     
     if proposal_type != None and beamline != None:
         return proposal_type, beamline
-
-    idx = os.getcwd().split('/').index('data')
-    proposal_type, beamline =  os.getcwd().split('/')[idx+1:idx+3]
+    cwd = os.getcwd().replace('gpfs/offline1','data')
+    idx = cwd.split('/').index('data')
+    proposal_type, beamline =  cwd.split('/')[idx+1:idx+3]
     return proposal_type, beamline
     
 def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=None,is_parallel=False,proposal_type='visitors',beamline='danmax'):
