@@ -6,6 +6,7 @@ import numpy.typing as npt
 import matplotlib.pyplot as plt
 from IPython.utils import io
 from matplotlib.colors import rgb_to_hsv
+from matplotlib.colors import hsv_to_rgb
 sys.path.append('../')
 import DanMAX as DM
 
@@ -14,7 +15,7 @@ def combineMaps(rh,
                 gs=None,
                 bv=None,
                 hsv=False,
-                scale_place=np.s_[10:12, 10:30, :],
+                scale_place=[[10,12],[10,30]],
                 normalize=False,
                 minmax=[[0., 1.], [0., 1.], [0., 1.]]):
     """ Returns a combination of three maps to plot as an rgb map.
@@ -39,7 +40,7 @@ def combineMaps(rh,
                     :
                     ]
 
-    cm = np.nan(rh.shape[0], rh.shape[1], 3)
+    cm = np.nan*np.ones((rh.shape[0], rh.shape[1], 3))
     if normalize:
         for dim in range(cm.shape[2]):
             cmap = cm[:, :, dim]
@@ -53,9 +54,9 @@ def combineMaps(rh,
     cm[:, :, 1] = gs
     cm[:, :, 2] = bv
     cm[np.isnan(cm)] = 0
-    cm[scale_place] = 1
     if hsv:
-        cm = rgb_to_hsv(cm)
+        cm = hsv_to_rgb(cm)
+    cm[scale_place] = 1
     return cm
 
 
