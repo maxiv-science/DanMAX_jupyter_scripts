@@ -2,6 +2,8 @@
 
 import numpy as np
 import scipy.optimize as sci_op
+import datetime
+import multiprocessing as mp
 
 def gauss(x,a,x0,sigma,bgr=0):
     """
@@ -17,6 +19,28 @@ def gauss(x,a,x0,sigma,bgr=0):
     """
     return a*np.exp(-(x-x0)**2/(2*sigma**2))+bgr
     
+def gaussCircle(chi,a,chi0,sigma,bgr=0., multiplicity=2):
+    """
+    Return a gaussian peak function on a circle
+    Parameters
+        chi          - chi-values 
+        a            - amplitude
+        chi0         - peak position in chi-coordinates
+        sigma        - standard deviation (sigma = fwhm/(2*np.sqrt(2*np.log(2))))
+        bgr          - (optional) constant background
+        multiplicity - (optional) how many times does the peak repeat across the circle
+    Return
+        y_calc       - y-values for the gaussian peak
+    """
+    y_calc = np.zeros(chi.shape) 
+    chi_shift = 2*np.pi / multiplicity  
+    for i in range(multiplicity):
+        y_calc += a * np.exp( - np.arccos(np.cos( chi-(chi0+chi_shift*i)))**2 / (2*sigma**2))
+    y_calc += bgr
+
+    return y_calc 
+
+
 def gaussIntegral(a,sigma):
     """Return the integrated area of a gauss function"""
     return np.sqrt(2*np.pi)*a*np.abs(sigma)
