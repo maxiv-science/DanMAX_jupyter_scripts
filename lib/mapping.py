@@ -62,6 +62,8 @@ def combineMaps(rh,
 
 def getXRFFitFilename(
         scans,
+        proposal_type=None,
+        beamline=None,
         proposal=None,
         visit=None,
         base_folder=None,
@@ -69,9 +71,10 @@ def getXRFFitFilename(
         ):
 
     proposal, visit = DM.getCurrentProposal(proposal, visit)
+    proposal_type, beamline = DM.getCurrentProposalType(proposal_type, beamline)
 
     if base_folder is None:
-        session_path = f'/data/visitors/danmax/{proposal}/{visit}/'
+        session_path = f'/data/{proposal_type}/{beamline}/{proposal}/{visit}/'
     else:
         session_path = base_folder
 
@@ -84,8 +87,8 @@ def getXRFFitFilename(
     idx = fname.split('/').index('danmax')
     sample_name = fname.split('/')[idx + 4]
 
-    xrf_out_dir = f'{session_path}process/xrf_fit/{sample_name}/{scan_name}/'
-    xrf_file_name = f'fitted_elements_{scan_name}_{channel}'
+    xrf_out_dir = f'{session_path}/process/xrf_fit/{sample_name}/{scan_name}/'
+    xrf_file_name = f'fitted_elements_{scan_name}_{channel}.h5'
 
     return xrf_out_dir, xrf_file_name
 
@@ -186,7 +189,8 @@ def stitchScans(scans,
             # import falcon x data
             if XRF:
                 with h5py.File(fname, 'r') as f:
-                    S = f['/entry/instrument/falconx/data'][:]
+                    S = f['/entry/instrument/xspress3-dtc-2d/data'][:]
+                S = S.squeeze()
                 S = S[:, energy < Emax*1.1]
                 snitch['Emax'] = Emax
                 snitch['energy'] = energy
@@ -245,9 +249,9 @@ def stitchScans(scans,
             #  This will not always be the case, then unpack the shape
             if XRF or XRD:
                 if np.prod(map_shape) != np.prod(data_shape):
-                    map_shape = (map_shape[0]-1, map_shape[1])
-                if np.prod(map_shape) != np.prod(data_shape):
                     map_shape = (map_shape[0], map_shape[1]-1)
+                if np.prod(map_shape) != np.prod(data_shape):
+                    map_shape = (map_shape[0]-1, map_shape[1])
 
             # Check if I0 exists
             if I0 is None:
@@ -334,7 +338,10 @@ def stitchScans(scans,
     snitch['x_map'] = xx
     snitch['y_map'] = yy
     if XRD:
-        x_xrd = x_xrd[np.min(xrd_map > 0, axis=(0, 1))]
+        if len(xrd_map.shape) == 3:
+            x_xrd = x_xrd[np.min(xrd_map > 0, axis=(0, 1))]
+        elif len(xrd_map.shape) == 4:
+            x_xrd = x_xrd[np.min(xrd_map > 0, axis=(0, 1, 2))]
         snitch['x_xrd'] = x_xrd
         if XRD_cake:
             cake_map = cake_map[:, :, :, np.min(xrd_map > 0, axis=(0, 1))]
