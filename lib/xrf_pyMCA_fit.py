@@ -10,6 +10,7 @@ session_path = '/data/visitors/danmax/{0}/{1}/'
 sample_name = 'sample'
 config_files = 'blub.cfg'
 detector = 'falconx'          # 'falconx' at danmax, 'x3mini' or 'xspress3' elsewhere
+detector = 'xpress3-dtc-2d'
 channels = [0]
 
 make_pymca_h5        = True
@@ -47,7 +48,7 @@ class xrfBatch():
 
     # init with the most important information that is needed over and over again
     def __init__(self, scan_list, session_path=None, config_file=None,
-                 calib_file=None, detector = 'falconx', channel = 0,
+                 calib_file=None, detector = 'xpress3-dtc-2d', channel = 0,
                  save_loc=None, calibration = None, sample_name = None,
                  proposal=None,visit=None):
 
@@ -223,7 +224,7 @@ class xrfBatch():
             if isinstance(item, list):
                 item = numpy.array(item)
             # save strings, numpy.int64, and numpy.float64 types
-            if isinstance(item, (numpy.int64, numpy.float64, str, numpy.float, float, numpy.float32,int)):
+            if isinstance(item, (numpy.int64, numpy.float64, str, float, numpy.float32,int)):
                 h5file[path + key] = item
             # save numpy arrays
             elif isinstance(item, numpy.ndarray):
