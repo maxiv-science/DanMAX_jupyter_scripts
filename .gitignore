@@ -3,6 +3,10 @@ _*.ipynb
 revision*.md
 .ipynb_checkpoints/
 
+#Non danmax programs
+reconBlazer/
+reconblazer/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
