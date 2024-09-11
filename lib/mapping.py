@@ -578,3 +578,49 @@ def save_maps(
                     sf[snitch_keys[key]].attrs['unit'] = units[key]
 
     copy_h5_linking(stitch_file, soft_links)
+
+def getXRDctMap(fname,xrd_range=None):
+    """
+    Return the xrd ct map of the specified file as a dictionary of maps
+    Parameters
+        fname     - master .h5 file or path to _recon.h5 file
+        xrd_range - list/tuple of min/max scattering angle to load, None for whole
+                    dataset (default None)
+    Return
+        maps - dictionary: {'x_map':np.array,'y_map':np.array,'xrd_map':np.array,'x_xrd':np.array,'Q':bool}
+    """
+    # find reconstructed file name
+    rname = fname.replace('raw', 'process/xrd_ct').replace('.h5', '_recon.h5')
+    
+    # load the reconstructed data
+    with h5py.File(rname,'r') as f:
+        recon = f['/reconstructed/gridrec'][:] # (n, m, radial)
+        if 'q' in f.keys():
+            Q = True
+            x = f['q'][:]
+        else:
+            Q = False
+            x = f['2th'][:]
+        if 'micrometer_per_px' in f.keys():
+            um_per_px = f['micrometer_per_px'][()]
+        else:
+            um_per_px = np.nan
+    # generate x/y_map in px
+    x_map, y_map = np.mgrid[0:recon.shape[0],0:recon.shape[1]]
+    # convert to mm
+    if not np.isnan(um_per_px):
+        x_map = x_map*um_per_px*1e-3 # mm
+        y_map = y_map*um_per_px*1e-3 # mm
+
+    if xrd_range is None:
+        roi = x==x
+    else:
+        roi = (x>xrd_range[0]) & (x<xrd_range[1])
+    
+    maps = {'x_map': x_map,
+            'y_map': y_map,
+            'xrd_map': recon[:,:,roi],
+            'x_xrd': x[roi],
+            'Q': Q,
+            }
+    return maps
