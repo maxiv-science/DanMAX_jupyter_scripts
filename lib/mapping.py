@@ -598,7 +598,6 @@ def save_maps(
         for key in maps.keys():
 
             if not maps[key] is None:
-
                 if not isinstance(maps[key], np.ndarray):
                     sf.create_dataset(
                             snitch_keys[key],
@@ -611,9 +610,17 @@ def save_maps(
                                 transpose_data
                                 )
 
+                if isinstance(maps[key], np.float64):
+                    savetype = np.float32
+                else:
+                    savetype = type(maps[key])
+
                 sf.create_dataset(
                         snitch_keys[key],
-                        data=np.transpose(maps[key], trans_order)
+                        data=np.transpose(
+                            maps[key],
+                            trans_order
+                            ).astype(savetype)
                         )
                 if key in units.keys():
                     sf[snitch_keys[key]].attrs['unit'] = units[key]
