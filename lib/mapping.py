@@ -394,9 +394,15 @@ def transpose_order(
         shape: npt.ArrayLike,
         trans: bool
         ) -> npt.ArrayLike:
-    # Finds the permutation to put order as -1 1 0 2 3 4 ...
-    # Shape is the shape of the matrix to transpose
-    # trans (bool) is whether or not to transpose the matrix
+    '''
+     Finds the permutation to put order as -1 1 0 2 3 4 ...
+
+     parameters:
+        Shape is the shape of the matrix to transpose
+        trans (bool) is whether or not to transpose the matrix
+     returns
+        trans_order order of dimensions after transposing
+    '''
 
     if trans and len(shape) > 2:
         trans_order = [len(shape)-1, 1, 0]
@@ -407,6 +413,7 @@ def transpose_order(
 
     return trans_order
 
+
 def q_to_unit(q: bool) -> list:
     if q:
         unit = ['q', 'A-1']
@@ -416,14 +423,40 @@ def q_to_unit(q: bool) -> list:
     return unit
 
 
-
 def save_maps(
         maps: dict,
         scans: list,
         transpose_data: bool = True,
+        proposal_type: str = None,
+        beamline: int = None,
         proposal: int = None,
         visit: int = None,
         ) -> None:
+    '''
+    Save shaped maps containing XRD or XRF data.
+    Either from mapping, or XRDCT.
+
+    Parameters:
+        maps: (required) dictionary with the scan information, fields:
+            - x_map: (required) map of x values
+            - y_map: (required) map of y values
+            - Q: (required) unit of xrd integration
+            - xrd_map: map of 1d xrd data
+            - cake_map: map of 2d xrd data
+            - xrf_map: map of xrf data
+            - x_xrd: diffraction signal x-values
+            - azi: azimuthal values for 2d XRD data
+            - energy: list of energies for XRF data
+            - Emax: maximum energy for XRF data
+            - I0_map: map of I0 values
+        scans: list of scans used for the map
+        transpose_data: Transpose large dimentional data for fast viewing
+        proposal_type: Type of the proposal
+        beamline: Beamline of the experiment
+        proposal: Proposal number
+        visit: Visit number
+    Returns: None
+    '''
 
     group_measurement = 'entry/measurement'
     group_scans = 'scan_list'
@@ -453,14 +486,14 @@ def save_maps(
 
     soft_links = {}
     groups = [group_measurement]
-    if not maps['xrd_map'] is None:
+    if 'xrd_map' in maps and not maps['xrd_map'] is None:
         groups.append(group_xrd1d)
         soft_links[group_xrd1d] = {
                 snitch_keys['x']: f'{group_xrd1d}/x',
                 snitch_keys['y']: f'{group_xrd1d}/y',
                 snitch_keys['x_xrd']: f'{group_xrd1d}/{x_xrd[0]}',
                 }
-    if not maps['cake_map'] is None:
+    if 'cake_map' in maps and not maps['cake_map'] is None:
         groups.append(group_xrd2d)
         soft_links[group_xrd2d] = {
                 snitch_keys['x']: f'{group_xrd2d}/x',
@@ -468,7 +501,7 @@ def save_maps(
                 snitch_keys['x_xrd']: f'{group_xrd1d}/{x_xrd[0]}',
                 snitch_keys['azi']: f'{group_xrd2d}/azi',
                 }
-    if not maps['xrf_map'] is None:
+    if 'xrf_map' in maps and not maps['xrf_map'] is None:
         groups.append(group_xrf)
         soft_links[group_xrf] = {
                 snitch_keys['x']: f'{group_xrf}/x',
@@ -522,20 +555,28 @@ def save_maps(
                                 transpose_data)
                 attr[1] = attr[1][trans_order]
 
-    stitch_folder_name = os.path.dirname(
+    folder_name = os.path.dirname(
             DM.findScan(
                 scans[0],
+                proposal_type=proposal_type,
+                beamline=beamline,
                 proposal=proposal,
                 visit=visit)).replace(
                     'raw',
-                    'process/stitched_maps')
+                    'process/maps')
 
-    if not os.path.isdir(stitch_folder_name):
-        os.makedirs(stitch_folder_name)
+    if not os.path.isdir(folder_name):
+        os.makedirs(folder_name)
 
-    stitch_file = os.path.join(
-            stitch_folder_name,
-            f'scan_{scans[0]}-{scans[-1]}.h5'
+    if isinstance(scans[0], str):
+        scan_nrs = [int(scans[0][-7:-3]),
+                    int(scans[-1][-7:-3])]
+    else:
+        scan_nrs = [scans[0], scans[-1]]
+
+    file_name = os.path.join(
+            folder_name,
+            f'scan_{scan_nrs[0]}-{scan_nrs[1]}.h5'
             )
     scan_filenames = np.array(
             [DM.findScan(
@@ -546,9 +587,9 @@ def save_maps(
             dtype=h5py.special_dtype(vlen=str)
             )
 
-    setup_h5_file(stitch_file, attributes, groups=groups)
+    setup_h5_file(file_name, attributes, groups=groups)
 
-    with h5py.File(stitch_file, 'a') as sf:
+    with h5py.File(file_name, 'a') as sf:
         sf.create_dataset(
                 group_scans,
                 data=scan_filenames,
@@ -577,7 +618,7 @@ def save_maps(
                 if key in units.keys():
                     sf[snitch_keys[key]].attrs['unit'] = units[key]
 
-    copy_h5_linking(stitch_file, soft_links)
+    copy_h5_linking(file_name, soft_links)
 
 def getXRDctMap(fname,xrd_range=None):
     """
