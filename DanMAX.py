@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.5.1'
+version = '3.5.2'
 
 #use_dark_mode = True
 import os
@@ -385,8 +385,10 @@ def getExposureTime(fname,proposal=None,visit=None):
 
 def getScan_id(fname):
     """Return the scan_id from a full file path"""
+    if 'master.h5' in fname:
+        return fname.split('raw/')[-1].split('/master')[0]
     return 'scan-'+fname.strip().split('scan-')[-1][:4]
-    
+
 def averageLargeScan(fname):
     """
     Return the average image of large scans
