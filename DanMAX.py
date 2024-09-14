@@ -742,7 +742,7 @@ def getAzintData(fname,
             if keys is None:
                 print(f'Unable to access {fname}::/entry/instrument/../')
             else:
-                print(f'Unable to access {fname}::/entry/instrument/{[keys[0]}/data')
+                print(f'Unable to access {fname}::/entry/instrument/{keys[0]}/data')
 
     if data['I'][:meta_length].shape[0]<data['I'].shape[0] and not meta_length is None:
         print(f'Data size mismatch - cropped to {meta_length} frames')
