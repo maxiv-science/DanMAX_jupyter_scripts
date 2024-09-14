@@ -733,12 +733,16 @@ def getAzintData(fname,
 
     meta_length = None
     if os.path.isfile(fname):
+        keys=None
         try:
             with h5py.File(fname,'r') as f:
                 keys = sorted(list(f['/entry/instrument'].keys()))
                 meta_length = f['/entry/instrument'][keys[0]+'/data'].shape[0]
         except KeyError:
-            print(f'Unable to access {fname}::/entry/instrument/{keys[0]}/data')
+            if keys is None:
+                print(f'Unable to access {fname}::/entry/instrument/../')
+            else:
+                print(f'Unable to access {fname}::/entry/instrument/{[keys[0]}/data')
 
     if data['I'][:meta_length].shape[0]<data['I'].shape[0] and not meta_length is None:
         print(f'Data size mismatch - cropped to {meta_length} frames')
