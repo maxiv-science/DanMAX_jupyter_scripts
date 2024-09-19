@@ -614,7 +614,7 @@ def save_maps(
                     savetype = np.float32
                 else:
                     savetype = maps[key].dtype
-                print(savetype)
+                
                 sf.create_dataset(
                         snitch_keys[key],
                         data=np.transpose(
