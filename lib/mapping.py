@@ -563,7 +563,7 @@ def save_maps(
                 proposal=proposal,
                 visit=visit)).replace(
                     'raw',
-                    'process/maps')
+                    'process/_maps')
 
     if not os.path.isdir(folder_name):
         os.makedirs(folder_name)
@@ -610,11 +610,11 @@ def save_maps(
                                 transpose_data
                                 )
 
-                if isinstance(maps[key], np.float64):
+                if x_map.dtype == np.float64:
                     savetype = np.float32
                 else:
-                    savetype = type(maps[key])
-
+                    savetype = maps[key].dtype
+                print(savetype)
                 sf.create_dataset(
                         snitch_keys[key],
                         data=np.transpose(
@@ -626,6 +626,35 @@ def save_maps(
                     sf[snitch_keys[key]].attrs['unit'] = units[key]
 
     copy_h5_linking(file_name, soft_links)
+
+def load_maps(fname):
+    """
+    Load xrd maps saved by save_maps
+    
+    NEEDS TO BE EXPANDED
+    """
+    group_xrd1d = 'entry/dataxrd1d'
+    group_measurement = 'entry/measurement'
+    
+    maps = {'x_map':group_measurement+'/x_map',
+            'y_map':group_measurement+'/y_map',
+            'xrd_map':group_xrd1d+'/xrd',
+            'x_xrd':[group_xrd1d+'/tth',group_xrd1d+'/q'],
+           }
+    
+    
+    with h5py.File(fname) as f:
+        Q = f[group_measurement+'/Q'][()]
+        for key in maps:
+            if key == 'x_xrd':
+                maps[key] = f[maps[key][0]][:]
+                if Q:
+                    maps[key] = f[maps[key][1]][:]
+            else:
+                maps[key] = f[maps[key]][:]
+        maps['Q']=Q
+    return maps
+
 
 def getXRDctMap(fname,xrd_range=None):
     """
