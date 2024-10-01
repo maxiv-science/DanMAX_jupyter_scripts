@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.5.2'
+version = '3.5.3'
 
 #use_dark_mode = True
 import os
@@ -790,12 +790,13 @@ def interactiveImageHist(im,ignore_zero=False):
         vmax = cen[np.argmin(np.abs(np.diff(val[np.argmax(val):])))]
         
         # estimate appropriate figure aspect ratio
-        im_aspect = im.shape[0]/im.shape[1]
+        #im_aspect = im.shape[0]/im.shape[1]
         width_ratios=[10,1]
-        ax_aspect = 1+(width_ratios[1]/np.sum(width_ratios))
-        fig_aspect = im_aspect*ax_aspect
+        #ax_aspect = 1+(width_ratios[1]/np.sum(width_ratios))
+        #fig_aspect = im_aspect*ax_aspect
     
-        fig = plt.figure(figsize=(5*fig_aspect,5))
+        #fig = plt.figure(figsize=(5*fig_aspect,5))
+        fig = plt.figure()
         # initialize grid and subplot with different size-ratios
         grid = plt.GridSpec(1,2,width_ratios=width_ratios) #rows,columns
         ax0, ax1 = [fig.add_subplot(gr) for gr in grid]
@@ -810,7 +811,7 @@ def interactiveImageHist(im,ignore_zero=False):
         # plot histogram
         ax1.plot(val,cen)
         ax1.set_ylim(vmin,vmax)
-
+        fig.tight_layout()
         return fig, cm, ax0, ax1
 
     # initialize the figure
