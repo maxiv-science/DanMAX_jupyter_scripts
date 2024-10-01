@@ -658,6 +658,7 @@ def load_maps(fname):
 
 def getXRDctMap(fname,xrd_range=None):
     """
+    PARTIALLY OBSOLETE
     Return the xrd ct map of the specified file as a dictionary of maps
     Parameters
         fname     - master .h5 file or path to _recon.h5 file
