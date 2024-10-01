@@ -162,3 +162,51 @@ def rebin_1d(x,y,bins=None):
     for i,y in enumerate(y_bin):
         y_bin[i] = np.interp(bins,bins[~np.isnan(y)],y[~np.isnan(y)])
     return bins, y_bin
+
+
+def fft_1d(t, values):
+    """Compute the 1D Fourier transform of a signal.
+
+    Parameters
+    ----------
+    t : array_like
+        The times at which the signal is sampled.
+    values : array_like
+        The values of the signal at each time.
+
+    Returns
+    -------
+    freqs : ndarray
+        The frequencies at which the Fourier transform is computed.
+        This is an array of positive frequencies.
+
+    fft_values : ndarray
+            The absolute values of the Fourier transform at the corresponding frequencies.
+            This is an array of complex numbers.
+    """
+    # Ensure the input arrays are numpy arrays
+    t = np.array(t)
+    values = np.array(values)
+
+    # Ensure the input arrays are 1D
+    if t.ndim != 1:
+        raise ValueError("Input array t must be 1D")
+    if values.ndim != 1:
+        raise ValueError("Input array values must be 1D")
+    
+    # Compute the Fourier transform
+    fft_values = np.fft.fft(values)
+    
+    # Compute the corresponding frequencies
+    sample_spacing = np.mean(np.diff(t))
+    freqs = np.fft.fftfreq(len(values), sample_spacing)
+
+    # Only return the positive frequencies
+    fft_values = fft_values[freqs > 0]
+    freqs = freqs[freqs > 0]
+
+    # normalize the fft values and take the absolute value
+    fft_values = np.abs(fft_values / len(values))
+
+    # Return the frequencies and the Fourier transform values
+    return freqs, fft_values
