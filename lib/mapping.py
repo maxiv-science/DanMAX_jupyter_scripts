@@ -627,12 +627,28 @@ def save_maps(
 
     copy_h5_linking(file_name, soft_links)
 
-def load_maps(fname):
+def load_maps(fnames):
     """
     Load xrd maps saved by save_maps
     
     NEEDS TO BE EXPANDED
     """
+    if isinstance(fnames,list):
+        if '/raw' in fnames[0]:
+            first_scan_id = int(DM.getScan_id(fnames[0])[5:])
+            last_scan_id = int(DM.getScan_id(fnames[-1])[5:])
+            # find reconstructed file name
+            fname = fnames[0].replace('raw', 'process/maps').split('/scan-')[0]+f'/scan_{first_scan_id:d}-{last_scan_id:d}.h5'
+        else:
+            fname=fnames[0]
+    else:
+        fname = fnames
+        if '/raw' in fname:
+            scan_id = int(DM.getScan_id(fname)[5:])
+            # find reconstructed file name
+            fname = fname.replace('raw', 'process/maps').split('/scan-')[0]+f'/scan_{scan_id:d}-{scan_id:d}.h5'
+    print(fname)
+
     group_xrd1d = 'entry/dataxrd1d'
     group_measurement = 'entry/measurement'
     
@@ -654,7 +670,6 @@ def load_maps(fname):
                 maps[key] = f[maps[key]][:]
         maps['Q']=Q
     return maps
-
 
 def getXRDctMap(fname,xrd_range=None):
     """
