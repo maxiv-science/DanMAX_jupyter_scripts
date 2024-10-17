@@ -563,7 +563,7 @@ def save_maps(
                 proposal=proposal,
                 visit=visit)).replace(
                     'raw',
-                    'process/_maps')
+                    'process/maps')
 
     if not os.path.isdir(folder_name):
         os.makedirs(folder_name)
@@ -610,7 +610,7 @@ def save_maps(
                                 transpose_data
                                 )
 
-                if x_map.dtype == np.float64:
+                if maps[key].dtype == np.float64:
                     savetype = np.float32
                 else:
                     savetype = maps[key].dtype
@@ -670,6 +670,7 @@ def load_maps(fnames):
                 maps[key] = f[maps[key]][:]
         maps['Q']=Q
     return maps
+
 
 def getXRDctMap(fname,xrd_range=None):
     """
