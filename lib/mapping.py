@@ -574,10 +574,18 @@ def save_maps(
     else:
         scan_nrs = [scans[0], scans[-1]]
 
-    file_name = os.path.join(
-            folder_name,
-            f'scan_{scan_nrs[0]}-{scan_nrs[1]}.h5'
-            )
+    if len(scans) > 1:
+        file_name = os.path.join(
+                folder_name,
+                f'scan_{scan_nrs[0]:04d}-{scan_nrs[1]:04d}.h5'
+                )
+    else:
+        file_name = os.path.join(
+                folder_name,
+                f'scan_{scan_nrs[0]:04d}.h5'
+                )
+
+
     scan_filenames = np.array(
             [DM.findScan(
                 scan,
@@ -638,7 +646,7 @@ def load_maps(fnames):
             first_scan_id = int(DM.getScan_id(fnames[0])[5:])
             last_scan_id = int(DM.getScan_id(fnames[-1])[5:])
             # find reconstructed file name
-            fname = fnames[0].replace('raw', 'process/maps').split('/scan-')[0]+f'/scan_{first_scan_id:d}-{last_scan_id:d}.h5'
+            fname = fnames[0].replace('raw', 'process/maps').split('/scan-')[0]+f'/scan_{first_scan_id:04d}-{last_scan_id:04d}.h5'
         else:
             fname=fnames[0]
     else:
@@ -646,7 +654,7 @@ def load_maps(fnames):
         if '/raw' in fname:
             scan_id = int(DM.getScan_id(fname)[5:])
             # find reconstructed file name
-            fname = fname.replace('raw', 'process/maps').split('/scan-')[0]+f'/scan_{scan_id:d}-{scan_id:d}.h5'
+            fname = fname.replace('raw', 'process/maps').split('/scan-')[0]+f'/scan_{scan_id:04d}.h5'
     print(fname)
 
     group_xrd1d = 'entry/dataxrd1d'
