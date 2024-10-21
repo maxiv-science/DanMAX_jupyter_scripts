@@ -59,6 +59,38 @@ def combineMaps(rh,
     cm[scale_place] = 1
     return cm
 
+def mat_to_im(im,
+              vmin=0,
+              vmax=1,
+              cmap='viridis',
+              place_scale=True,
+              scale_place=[[10,12],[10,30]]):
+    '''
+    Convert 2D array to a 3D array where each pixel holds the color of a colormap
+    Input:
+    im: image [2d np array]
+    vmin: Minimum value [float:0]
+    vmax: Maximum value [float:1]
+    cmap: Matplotlib color map [string:'viridis']
+    place_scale: Use scale bar [bool:True] 
+    scale_place: Location of scale bar [list[list[int,int]]:[[10,12],[10,30]]] 
+
+    Output:
+    im: Image converted to RGB of the colormaps with the limits vmin,vmax and possible scalebar
+    '''
+    scale_place = np.s_[
+                scale_place[0][0]:scale_place[0][1],
+                scale_place[1][0]:scale_place[1][1],
+                :
+                ]
+    im = np.clip(im,vmin,vmax)
+    im = (im-vmin)/(vmax-vmin)
+
+    cs = plt.cm.get_cmap(cmap)
+    im = cs(im)
+    im[scale_place] = 1
+    
+    return im
 
 def getXRFFitFilename(
         scans,
