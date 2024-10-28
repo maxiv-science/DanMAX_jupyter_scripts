@@ -392,7 +392,7 @@ def findScan(scan_id=None,
              beamline=None):
     """Return the path of a specified scan number. If no scan number is specified, return latest scan"""
 
-    proposal_type, beamline = getCurrentProposal_type(proposal_type, beamline)
+    proposal_type, beamline = getCurrentProposalType(proposal_type, beamline)
     proposal, visit = getCurrentProposal(proposal, visit)
     if not is_parallel:
         if scan_id == None:
@@ -402,7 +402,7 @@ def findScan(scan_id=None,
         elif type(scan_id) == str:
             scan_id = 'scan-'+scan_id.strip().split('scan-')[-1][:4]
 
-        for sc in findAllScans(proposal=proposal,visit=visit,proposal_type=proposal_type,beamline=_veamline):
+        for sc in findAllScans(proposal=proposal,visit=visit,proposal_type=proposal_type,beamline=beamline):
             if scan_id in sc:
                 return sc
         print('Unable to find {scan_id} in {proposal_type}/{beamline}/{proposal}/{visit}')

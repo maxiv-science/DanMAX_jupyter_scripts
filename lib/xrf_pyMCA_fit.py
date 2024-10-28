@@ -47,10 +47,20 @@ import DanMAX as DM
 class xrfBatch():
 
     # init with the most important information that is needed over and over again
-    def __init__(self, scan_list, session_path=None, config_file=None,
-                 calib_file=None, detector = 'xpress3-dtc-2d', channel = 0,
-                 save_loc=None, calibration = None, sample_name = None,
-                 proposal=None,visit=None):
+    def __init__(self,
+                 scan_list,
+                 session_path=None,
+                 config_file=None,
+                 calib_file=None,
+                 detector='xpress3-dtc-2d',
+                 channel=0,
+                 save_loc=None,
+                 calibration=None,
+                 sample_name=None,
+                 proposal_type=None,
+                 beamline=None,
+                 proposal=None,
+                 visit=None):
 
         #Setting values to self
         self.session_path        = session_path
@@ -62,6 +72,7 @@ class xrfBatch():
         self.detector            = detector
         self.channel             = channel
         self.save_loc            = save_loc
+        self.proposal_type,self.beamline = DM.getCurrentProposalType(proposal_type,beamline)
         self.proposal,self.visit = DM.getCurrentProposal(proposal,visit)
         
         #Doing the following would be optimal, that way changes to this code should
@@ -75,7 +86,7 @@ class xrfBatch():
 
         #overwriting sample name if an empty was given
         if session_path == None:
-            self.session_path = f'/data/visitors/danmax/{self.proposal}/{self.visit}/'
+            self.session_path = f'/data/{self.proposal_type}/{self.beamline}/{self.proposal}/{self.visit}/'
 
         if calib_file == None and calibration == None:
             self.calib_file = f'{self.session_path}process/pymca_calib.calib'
@@ -88,7 +99,13 @@ class xrfBatch():
             raise IOError(f'Configuration file {self.config_file} not available')
 
         if sample_name == None:
-            fname = DM.findScan(int(scan_list[0]), proposal=self.proposal, visit=self.visit)
+            fname = DM.findScan(
+                            int(scan_list[0]),
+                            proposal_type=self.proposal_type,
+                            beamline=self.beamline,
+                            proposal=self.proposal,
+                            visit=self.visit
+                            )
             idx = fname.split('/').index('danmax')
             self.sample_name = fname.split('/')[idx + 4]
 
@@ -129,7 +146,15 @@ class xrfBatch():
 
     # Reads a NanoMAX file
     def readData(self):
-        snitch = DM.mapping.stitchScans(self.scan_list,XRD=False,xrf_calibration = self.calibration,proposal=self.proposal,visit=self.visit)
+        snitch = DM.mapping.stitchScans(
+                                self.scan_list,
+                                XRD=False,
+                                xrf_calibration=self.calibration,
+                                proposal_type=self.proposal_type,
+                                beamline=self.beamline,
+                                proposal=self.proposal,
+                                visit=self.visit
+                                )
 
         self.x = snitch['x_map']
         self.y = snitch['y_map']
@@ -270,6 +295,8 @@ if __name__ == "__main__":
     #Adding Nonoptional arguments
     parser.add_argument('scan_list',nargs='+',type=int,help='List of scans')
     #Adding noptional arguments
+    parser.add_argument('--proposal_type','-p', type=int, help='Proposal type, default get the current folder')
+    parser.add_argument('--beamline'   ,'-v', type=int, help='Beamline, default get from the current folder')
     parser.add_argument('--proposal','-p', type=int, help='Proposal, default get the current folder')
     parser.add_argument('--visit'   ,'-v', type=int, help='Visit, default get from the current folder')
     parser.add_argument('--config'  ,'-o', type=str, help='configuration file')
@@ -282,6 +309,7 @@ if __name__ == "__main__":
     t0 = time.time()
 
 
+    proposal_type,beamline =  DM.getCurrentProposalType(proposal_type=args.proposal_type,beamline=args.beamline)
     proposal,visit =  DM.getCurrentProposal(proposal=args.proposal,visit=args.visit)
     config_file = sys.argv[2]
     session_path = sessionpath.format(proposal,visit)
