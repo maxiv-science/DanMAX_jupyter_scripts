@@ -115,7 +115,11 @@ def getXRFFitFilename(
     else:
         scan_name = f'scan_{scans[0]:04}'
 
-    fname = DM.findScan(int(scans[0]), proposal=proposal, visit=visit)
+    fname = DM.findScan(int(scans[0]),
+                        proposal_type=proposal_type,
+                        beamline=beamline,
+                        proposal=proposal,
+                        visit=visit)
     idx = fname.split('/').index('danmax')
     sample_name = fname.split('/')[idx + 4]
 
@@ -134,6 +138,8 @@ def stitchScans(scans,
                 xrf_calibration=[0.14478, 0.01280573],
                 map_type=np.float32,
                 normI0=True,
+                proposal_type=None,
+                beamline=None,
                 proposal=None,
                 visit=None,
                 ):
@@ -172,11 +178,18 @@ def stitchScans(scans,
         (default np.float32)
     -normI0 Boolean: If true I0 will be normalized after stitching.
         (default True)
+    -proposal_type: select another proposal_type for testing. (default None)
+    -beamline: select another beamline for testing default. (default None)
     -proposal: select another proposal for testing. (default None)
     -visit: select another visit for testing default. (default None)
     """
 
-    fname = DM.findScan(int(scans[0]), proposal=proposal, visit=visit)
+    fname = DM.findScan(
+                int(scans[0]),
+                proposal_type=proposal_type,
+                beamline=beamline,
+                proposal=proposal,
+                visit=visit)
     # This dictionary will get them stitches
     snitch = {'x_map': None,
               'y_map': None,
@@ -217,7 +230,12 @@ def stitchScans(scans,
         print(f'scan-{scan} - {i+1} of {len(scans)}', end='\r')
         # print statements are suppressed within the following context
         with io.capture_output() as _:
-            fname = DM.findScan(int(scan), proposal=proposal, visit=visit)
+            fname = DM.findScan(
+                        int(scan),
+                        proposal_type=proposal_type,
+                        beamline=beamline,
+                        proposal=proposal,
+                        visit=visit)
             # import falcon x data
             if XRF:
                 with h5py.File(fname, 'r') as f:
@@ -621,6 +639,8 @@ def save_maps(
     scan_filenames = np.array(
             [DM.findScan(
                 scan,
+                proposal_type=proposal_type,
+                beamline=beamline,
                 proposal=proposal,
                 visit=visit
                 ) for scan in scans],
