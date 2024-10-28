@@ -102,7 +102,11 @@ def getCurrentProposalType(proposal_type=None, beamline=None):
     proposal_type, beamline =  cwd.split('/')[idx+1:idx+3]
     return proposal_type, beamline
 
-def getProposalScans(proposal_type=None, beamline=None,proposal=None, visit=None):
+def getProposalScans(
+        proposal_type=None,
+        beamline=None,
+        proposal=None,
+        visit=None):
     """Get scan directory for the current proposal
     """
     proposal_type, beamline = getCurrentProposalType(proposal_type, beamline)
@@ -118,7 +122,12 @@ def getProposalScans(proposal_type=None, beamline=None,proposal=None, visit=None
     with open(dictionary_file,'r') as df:
         return json.load(df)
 
-def saveProposalScans(scan_dictionary,proposal_type=None, beamline=None,proposal=None, visit=None):
+def saveProposalScans(
+            scan_dictionary,
+            proposal_type=None,
+            beamline=None,
+            proposal=None,
+            visit=None):
     """save scan directory for the current proposal
     Takes a dictionary and saves it as a json file
     """
@@ -137,7 +146,15 @@ def saveProposalScans(scan_dictionary,proposal_type=None, beamline=None,proposal
         json.dump(scan_dictionary, df)
 
     
-def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=None,is_parallel=False,proposal_type='visitors',beamline='danmax'):
+def getLatestScan(
+            scan_type='any',
+            require_integrated=False,
+            proposal_type=None,
+            beamline=None,
+            proposal=None,
+            visit=None,
+            is_parallel=False,
+            ):
     """
     Return the path to the latest /raw/*/*.h5 scan for the provided proposal and visit.
     Defaults to the current proposal directory of proposal and visit are not specified.
@@ -146,8 +163,9 @@ def getLatestScan(scan_type='any',require_integrated=False,proposal=None,visit=N
     
     Use require_integrated = True to ensure that the returned scan has a valid integrated .h5 file.
     """
-    proposal, visit = getCurrentProposal(proposal,visit)
+
     proposal_type, beamline = getCurrentProposalType(proposal_type, beamline)
+    proposal, visit = getCurrentProposal(proposal,visit)
     if is_parallel:
         return parallel.findAllParallel(proposal=None,visit=None)[-1]
     #print(proposal, visit)
@@ -196,7 +214,14 @@ def getAzintFname(fname):
     except OSError as err:
         print(err.strerror)
 
-def getMetaData(fname,custom_keys={},relative=True,proposal=None,visit=None):
+def getMetaData(
+            fname,
+            custom_keys={},
+            relative=True,
+            proposal_type=None,
+            beamline=None,
+            proposal=None,
+            visit=None):
     """
     Return dictionary of selected meta data. Return {key:None} if key is not available.
     Use custom_keys to provide a dictionary of custom keys for additional parameters, where 
@@ -215,7 +240,11 @@ def getMetaData(fname,custom_keys={},relative=True,proposal=None,visit=None):
     relative: Bool - Toggle wheteher to return data relative to the specific scan (True) or as absolute values (False). Default: True
     """
     if fname.startswith('scan-'):
-        fname = findScan(fname,proposal,visit)
+        fname = findScan(fname,
+                        proposal_type=proposal_type,
+                        beamline=beamline,
+                        proposal=proposal,
+                        visit=visit)
 
     if 'master.h5' in fname:
         fname = fname.replace('raw', 'process/azint').replace('.h5','_meta.h5')
@@ -280,7 +309,10 @@ def appendScans(scans,
                 xrd_range=None,
                 azi_range=None,
                 proposal=None,
-                visit=None,):
+                visit=None,
+                proposal_type=None,
+                beamline=None,
+                ):
     """
     Return appended arrays of the integrated diffraction data and meta data for several scans
         Parameters
@@ -289,17 +321,31 @@ def appendScans(scans,
             azi_range - list/tuple of min/max in azimuthal direction
             proposal - int, proposal to load from
             vist - int, visit to load from
+            proposal_type - str, proposal_type to load from
+            beamline - str, beamline to load from
         Return
             data - dictionary
             meta - dictionary
     """
     for i,scan in enumerate(scans):
-        fname = findScan(scan,proposal=proposal,visit=visit)
+        fname = findScan(scan,
+                         proposal_type=proposal_type,
+                         beamline=beamline,
+                         proposal=proposal,
+                         visit=visit)
         aname = getAzintFname(fname)
         metadic = getMetaDic(fname)
         ts = metadic['pcap_trigts']
         
-        datadic = getAzintData(aname,xrd_range=xrd_range,azi_range=azi_range,proposal=proposal,visit=visit)
+        datadic = getAzintData(
+                            aname,
+                            xrd_range=xrd_range,
+                            azi_range=azi_range,
+                            proposal_type=proposal_type,
+                            beamline=beamline,
+                            proposal=proposal,
+                            visit=visit
+                            )
         
         if len(ts) != datadic['I'].shape[0]:
             print(f'Missing metadata in {fname}')
@@ -317,7 +363,12 @@ def appendScans(scans,
     return data, meta
 
 
-def findAllScans(scan_type='any',descending=True,proposal=None,visit=None,proposal_type='visitors',beamline='danmax'):
+def findAllScans(scan_type='any',
+                 descending=True,
+                 proposal=None,
+                 visit=None,
+                 proposal_type=None,
+                 beamline=None):
     """
     Return a sorted list of all scans in the current visit
     Use scan_type (str) to specify which scan type to search for, i.e. 'timescan', 'dscan', 'ascan', etc.
@@ -333,8 +384,16 @@ def findAllScans(scan_type='any',descending=True,proposal=None,visit=None,propos
     return files
 
 
-def findScan(scan_id=None,proposal=None,visit=None,is_parallel=False,proposal_type='visitors',beamline='danmax'):
+def findScan(scan_id=None,
+             proposal=None,
+             visit=None,
+             is_parallel=False,
+             proposal_type=None,
+             beamline=None):
     """Return the path of a specified scan number. If no scan number is specified, return latest scan"""
+
+    proposal_type, beamline = getCurrentProposal_type(proposal_type, beamline)
+    proposal, visit = getCurrentProposal(proposal, visit)
     if not is_parallel:
         if scan_id == None:
             return getLatestScan()
@@ -343,13 +402,17 @@ def findScan(scan_id=None,proposal=None,visit=None,is_parallel=False,proposal_ty
         elif type(scan_id) == str:
             scan_id = 'scan-'+scan_id.strip().split('scan-')[-1][:4]
 
-        for sc in findAllScans(proposal=proposal,visit=visit,proposal_type='visitors',beamline='danmax'):
+        for sc in findAllScans(proposal=proposal,visit=visit,proposal_type=proposal_type,beamline=_veamline):
             if scan_id in sc:
                 return sc
-        print('Unable to find {} in {}/{}'.format(scan_id,*getCurrentProposal(proposal,visit)))
+        print('Unable to find {scan_id} in {proposal_type}/{beamline}/{proposal}/{visit}')
 
     else:
-        scans = parallel.findAllParallel(proposal=None,visit=None)
+        scans = parallel.findAllParallel(
+                                    proposal_type=proposal_type,
+                                    beamline=beamline,
+                                    proposal=proposal,
+                                    visit=visit)
         if scan_id is None:
             index = -1
         elif type(scan_id) == int:
@@ -357,14 +420,25 @@ def findScan(scan_id=None,proposal=None,visit=None,is_parallel=False,proposal_ty
         elif type(scan_id) == str:
             if scan_id in scans:
                 return scan_id
-            print('Unable to find {} in {}/{}'.format(scan_id,*getCurrentProposal(proposal,visit)))
+        print('Unable to find {scan_id} in {proposal_type}/{beamline}/{proposal}/{visit}')
         return scans[index]
     
     
-def getScanType(fname,proposal=None,visit=None):
+def getScanType(
+        fname,
+        proposal=None,
+        visit=None,
+        proposal_type=None,
+        beamline=None):
     """Return the scan type based on the .h5 scan title"""
     if fname.startswith('scan-'):
-        fname = findScan(fname,proposal=proposal,visit=visit)
+        fname = findScan(
+                    fname,
+                    proposal_type=proposal_type,
+                    beamline=beamline,
+                    proposal=proposal,
+                    visit=visit,
+                    )
     with h5py.File(fname,'r') as f:
         try:
             scan_type = f['entry/title/'][()].decode()
@@ -376,9 +450,20 @@ def getScanType(fname,proposal=None,visit=None):
             print('No entry title available')
             return 'None'
 
-def getExposureTime(fname,proposal=None,visit=None):
+def getExposureTime(
+        fname,
+        proposal=None,
+        visit=None,
+        proposal_type=None,
+        beamline=None):
     """Return the exposure time in seconds as determined from the scan type"""
-    scan_type = getScanType(fname,proposal=proposal,visit=visit)
+    scan_type = getScanType(
+                    fname,
+                    proposal_type=proposal_type,
+                    beamline=beamline,
+                    proposal=proposal,
+                    visit=visit,
+                    )
     if 'timescan' in scan_type:
         exposure = scan_type.split()[2]
     elif 'ascan' in scan_type:
@@ -417,10 +502,20 @@ def averageLargeScan(fname):
     im = im/no_of_frames
     return im
     
-def getAverageImage(fname='latest',proposal=None,visit=None):
+def getAverageImage(
+        fname='latest',
+        proposal=None,
+        visit=None,
+        proposal_type=None,
+        beamline=None,
+        ):
     """Return the average image of a scan - Default is the latest scan in the current folder"""
     if fname.lower() == 'latest':
-        fname = getLatestScan(proposal,visit)
+        fname = getLatestScan(
+                    proposal_type=proposal_type,
+                    beamline=beamline,
+                    proposal=proposal,
+                    visit=visit)
     with h5py.File(fname, 'r') as fh:
         no_of_frames = fh['/entry/instrument/pilatus/data'].shape[0]
         if no_of_frames < 1000:
@@ -442,7 +537,13 @@ def getHottestPixel(fname):
     print(f'Highest count rate in one frame: {cps:,.2f} cps')
     return cps
 
-def getMotorSteps(fname,proposal=None,visit=None):
+def getMotorSteps(
+            fname,
+            proposal=None,
+            visit=None,
+            proposal_type=None,
+            beamline=None
+            ):
     """
     Return motor name(s), nominal positions, and registred positions for a given scan.
         Return list of lists [[motor_name_1,nominal,registred], ...]
@@ -451,7 +552,13 @@ def getMotorSteps(fname,proposal=None,visit=None):
     dic = getMetaDic(fname)
     # get the scan command containing motor names, exposure, latency, and boolean flags
     # as a list of entries
-    scan_type = getScanType(fname).split()
+    scan_type = getScanType(
+                    fname,
+                    proposal_type=proposal_type,
+                    beamline=beamline,
+                    proposal=proposal,
+                    visit=visit
+                    ).split()
     # remove scan type and all entries without letters
     motors = [s for s in scan_type if s.lower().islower()][1:]
     # remove boolean flags
@@ -523,7 +630,9 @@ def getAzintData(fname,
                  xrd_range = None,
                  azi_range = None,
                  proposal = None,
-                 visit = None):
+                 visit = None,
+                 proposal_type=None,
+                 beamline=None):
     '''
         Return azimuthally integrated data for a specified file path. File name can be either the /raw/**/master.h5 or the /process/azint/**/*_pilatus_integrated_master.h5
         Dictionary entries for missing or irrelevant fields are set to None
@@ -535,13 +644,20 @@ def getAzintData(fname,
                 azi_range - list/tuple of lower and upper azimuthal scattering axis limit(default = None)
                 proposal - int (default = None)
                 visit - int (default = None)
+                proposal_type - str (default = None)
+                beamline - str (default = None)
             return:
                 data - dictionary
                 meta - dictionary
     '''
     # get the azimuthally integrated filename from provided file name,
     if type(fname) == int:
-        fname = findscan(fname,proposal=proposal,visit=visit)
+        fname = findscan(
+                fname,
+                proposal_type=proposal_type,
+                beamline=beamline,
+                proposal=proposal,
+                visit=visit)
     if '/raw/' in fname:
         aname = getAzintFname(fname)
     else:
