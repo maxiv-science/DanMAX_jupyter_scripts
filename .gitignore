@@ -1,5 +1,6 @@
 #House rules
 _*.ipynb
+_*.json
 revision*.md
 .ipynb_checkpoints/
 
