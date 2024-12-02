@@ -364,25 +364,33 @@ def parseCircleGaussFit(fit):
     return result, names
 
 
-
-
 def timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def fitLine(fun, x, line, mask_line, idx=None, verbose=False):
+def fitLine(fun,
+            x,
+            line,
+            mask_line,
+            idx=None,
+            verbose=False,
+            sequential=False,
+            fun_kwargs={}
+            ):
     """
     Fits every dataset in line using th  function fun with c values c and y_observed y_obs
     returns an array of results from the fit line.
 
     Parameters:
-    fun       - function to use for fitting, should take the parameters x,y_obs
-    x         - x values for fit, shape(n,)
-    line      - array of observed y values. shape(m,n)
-    mask_line - array of 0 and 1. 1 means point will be fitted, 0 means it will not, shape(m,)
-    idx       - (optional) the index for parallel computations of multiple lines.
-    verbose   - (optional) print statements throughout the process
-    
+    fun        - function to use for fitting, should take the parameters x,y_obs, **fun_kwargs. return None on nonconvergence
+    x          - x values for fit, shape(n,)
+    line       - array of observed y values. shape(m,n)
+    mask_line  - array of 0 and 1. 1 means point will be fitted, 0 means it will not, shape(m,)
+    idx        - (optional) the index for parallel computations of multiple lines.
+    verbose    - (optional) print statements throughout the process
+    sequential - (optional) use sequential fitting
+    fun_kwargs - (optional) use kwargs for the fitting function
+
     Returns:
     idx       - (optional) if idx has been set it will be returned.
     results   - array of the results of the fits, shape(n,)
@@ -393,12 +401,18 @@ def fitLine(fun, x, line, mask_line, idx=None, verbose=False):
     fitted = 0
     if verbose:
         print(f"Fitting {to_fit} points")
-
+    last_converged = None
     for i, y_obs in enumerate(line):
         if not mask_line[i]:
             continue
-        results[i] = fun(x,y_obs)
-        fitted += 1 
+        if sequential and last_converged is not None:
+            fun_kwargs['p0'] = results[last_converged]
+            results[i] = fun(x, y_obs, **fun_kwargs)
+        else:
+            results[i] = fun(x, y_obs, **fun_kwargs)
+        if sequential and results[i] is not None:
+            last_converged = i
+        fitted += 1
         if verbose:
             print(f'{timestamp()} -- Done fitting {int(100*fitted/to_fit):03d}%',end='\r')
     if verbose:
@@ -409,17 +423,28 @@ def fitLine(fun, x, line, mask_line, idx=None, verbose=False):
     else:
         return idx, results
 
-def fitMesh(fun, x, mesh, mask, parallel=True, nworkers=8,verbose=False):
+def fitMesh(fun,
+            x,
+            mesh,
+            mask,
+            parallel=True,
+            nworkers=8,
+            verbose=False,
+            sequential=False,
+            fun_kwargs={},
+            ):
     """
     Fits every dataset in a mesh of data, by fitting the individual lines of the mesh.
     Parameters:
-    fun       - function to use for fitting the data. function should take x, y_obs
-    x         - x-values to use for the fitting, shape(n,).
-    mesh      - mesh of observed values. shape(o,m,n).
-    mask      - mesh of 1 and 0. 1 will be fitted, 0 skipped. shape(o,m)
-    prallel   - (optional) wheather to fit in parallel or not.
-    nworkers  - (optional) number of workers to use for fitting.
-    verbose   - (optional) print statement throughout the process
+    fun        - function to use for fitting the data. function should take x, y_obs
+    x          - x-values to use for the fitting, shape(n,).
+    mesh       - mesh of observed values. shape(o,m,n).
+    mask       - mesh of 1 and 0. 1 will be fitted, 0 skipped. shape(o,m)
+    prallel    - (optional) wheather to fit in parallel or not.
+    nworkers   - (optional) number of workers to use for fitting.
+    verbose    - (optional) print statement throughout the process
+    sequential - (optional) use sequential fitting
+    fun_kwargs - (optional) use kwargs for the fitting function
     
     Returns:
     Results   - mesh of results from fun shape(o,m), every entry can be result or None
@@ -427,6 +452,12 @@ def fitMesh(fun, x, mesh, mask, parallel=True, nworkers=8,verbose=False):
 
     results = [[None]*mask.shape[1]]*mask.shape[0]
     n_lines = mesh.shape[0]
+    fitLine_kwargs = {
+                 'versode': verbose,
+                 'sequential': sequential,
+                 'fun_kwargs': fun_kwargs
+                 }
+
     if parallel:
         Steve = []
         with mp.Pool(nworkers) as pool:
@@ -437,9 +468,12 @@ def fitMesh(fun, x, mesh, mask, parallel=True, nworkers=8,verbose=False):
                         fitLine,
                         args=(fun,
                               x,
-                              mesh[idx,:],
-                              mask[idx,:],
-                              idx)))
+                              mesh[idx, :],
+                              mask[idx, :],
+                              idx,
+                              fitLine_kwargs
+                              ),
+                        kwargs=fitLine_kwargs))
             if verbose:
                 print(f'{timestamp()} -- submitted jobs')
 
@@ -456,7 +490,11 @@ def fitMesh(fun, x, mesh, mask, parallel=True, nworkers=8,verbose=False):
         if verbose:
             print(f'{timestamp()} -- Starting fittng.')
         for idx in range(n_lines):
-            results[idx] = fitLine(fun,x,mesh[idx,:])
+            results[idx] = fitLine(fun,
+                                   x,
+                                   mesh[idx, :],
+                                   mask[idx, :],
+                                   **fitLine_kwargs)
             if verbose:
                 print(f'{timestamp()} -- completed {int(idx/n_lines*100):03d}% of lines')
         if verbose:
@@ -504,6 +542,7 @@ def parseFitMesh(fun, fitmesh, parallel=True, nworkers=8, verbose=False):
     '''
 
     def _find_completed_fit(fitmesh):
+        ''' Find the first successful fit in the fitmesh'''
         for i in fitmesh:
             for j in i:
                 if j is None:
@@ -512,11 +551,11 @@ def parseFitMesh(fun, fitmesh, parallel=True, nworkers=8, verbose=False):
                 if res is None:
                     continue
                 return res, names
-        return None,names
+        return None, names
 
-    res,names = _find_completed_fit(fitmesh)   
+    res, names = _find_completed_fit(fitmesh)   
 
-    results = np.zeros(( len(fitmesh), len(fitmesh[0]), len(names) ))
+    results = np.zeros((len(fitmesh), len(fitmesh[0]), len(names)))
     n_lines = results.shape[0]
     if parallel:
         Steve = []
@@ -535,10 +574,10 @@ def parseFitMesh(fun, fitmesh, parallel=True, nworkers=8, verbose=False):
             for idx in range(n_lines):
                 res = Steve[idx].get()
                 if res[1] is not None: 
-                    results[res[0],:,:] = res[1] 
+                    results[res[0], :, :] = res[1]
 
                 if verbose:
-                    print(f'{timestamp()} -- completed {int(idx/n_lines*100):03d}% of lines',end='\r')
+                    print(f'{timestamp()} -- completed {int(idx/n_lines*100):03d}% of lines', end='\r')
 
             if verbose:
                 print(f'{timestamp()} -- Parsing completed.')
@@ -555,5 +594,3 @@ def parseFitMesh(fun, fitmesh, parallel=True, nworkers=8, verbose=False):
             print(f'{timestamp()} -- Completed parsing.')
 
     return results, names
-
-
