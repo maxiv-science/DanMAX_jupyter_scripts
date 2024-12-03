@@ -4,6 +4,7 @@ import numpy as np
 import scipy.optimize as sci_op
 import datetime
 import multiprocessing as mp
+import copy
 
 def gauss(x,a,x0,sigma,bgr=0):
     """
@@ -40,6 +41,26 @@ def gaussCircle(chi,a,chi0,sigma,bgr=0., multiplicity=2):
 
     return y_calc 
 
+def gaussian_n(x,sigma):
+    """Normalised gaussian function"""
+    #sigma = fwhm/(2*np.sqrt(2*np.log(2)))
+    a = 1/(np.sqrt(2*np.pi)*np.abs(sigma))
+    return a*np.exp(-(x)**2/(2*sigma**2))
+    
+def lorentzian_n(x,gamma):
+    """Normalised lorentzian function"""
+    #gamma = FWHM/2
+    return gamma/(np.pi*(x**2+gamma**2))
+
+def pseudoVoigt(x,FWHM,eta):
+    """normalised pseudo-Voigt function with equal
+    FWHM for the gaussian and lorentzian components"""
+    sigma = FWHM2sigma(FWHM)
+    gamma = FWHM2gamma(FWHM)
+    G = gaussian_n(x,sigma)
+    L = lorentzian_n(x,gamma)
+    return eta*G + (1-eta)*L
+
 
 def gaussIntegral(a,sigma):
     """Return the integrated area of a gauss function"""
@@ -69,6 +90,14 @@ def FWHM2sigma(fwhm):
     """Convert gaussian FWHM to variance"""
     return fwhm/(2*np.sqrt(2*np.log(2)))
 
+def FWHM2gamma(FWHM):
+    """Convert FWHM to lorentzian half width"""
+    return FWHM/2
+
+def gamma2FWHM(gamma):
+    """Convert lorentzian half width to FWHM"""
+    return gamma*2
+    
 def linearBackground(y,n=3):
     """
     Simple linear background, interpolated from the mean of the n first and n last points
@@ -363,6 +392,143 @@ def parseCircleGaussFit(fit):
 
     return result, names
 
+def pVpeakCheb(x,*args):
+    """
+    Pseudo-Voigt peak with chebyshev background
+    
+    Parameters:
+    x - x values
+    args - x0, a, FWHM, eta, *bgr_coeff
+
+    Returns:
+    y - y values
+    """
+    x0, a, FWHM, eta = args[:4]
+    bgr_coeff = args[4:]
+    y = a*pseudoVoigt(x-x0, FWHM, eta)
+    # chebysev background
+    y += np.polynomial.chebyshev.chebval(x,bgr_coeff)
+    return y
+
+def parsePVPeakFit(param):
+    '''
+    Parses the result from pseudo Voigt fit.
+    Returns an nd array of parameters and a list of their names if fit successful otherwise None.
+    Parameters:
+    param - dictionary of parameters from a pv fit.
+    '''
+
+    names = ['position','integral','FWHM','eta','sigma','gamma','residual']+[f'bgr_{i}' for i in range(len(param['bgr_coeff']))]
+
+    if np.isnan(param['x0']):
+        return None,names
+
+    result = np.zeros(len(names))
+    result[0] = param['x0']
+    result[1] = param['integral']
+    result[2] = param['FWHM']
+    result[3] = param['eta']
+    result[4] = FWHM2sigma(param['FWHM'])
+    result[5] = FWHM2gamma(param['FWHM'])
+    result[6] = param['res']
+    result[7:] = param['bgr_coeff']
+    return result, names
+
+def pVPeakMesh(x,x0,a,FWHM,eta):
+    """Calculate a pseudo-Voigt peak mesh 
+    Parameters:
+    x      - x values (o)
+    x0     - x0 values (m,n)
+    a      - peak area (m,n)
+    FWHM   - pseudo-Voigt FWHM (m,n)
+    eta    - pseudo-Voigt mixing ratio eta (m,n)
+    Returns:
+    y_calc - calculated values (m,n,o)
+    """
+    map_shape = x0.shape
+    x0 = np.atleast_2d(x0.flatten()).T
+    a = np.atleast_2d(a.flatten()).T
+    FWHM = np.atleast_2d(FWHM.flatten()).T
+    eta = np.atleast_2d(eta.flatten()).T
+
+    y = pseudoVoigt(x-x0, FWHM, eta) * a
+    return y.reshape((*map_shape,-1))
+    
+def pVPeakFit(x,y,p0=None,verbose=False):
+    """
+    Performe a single peak pseudo-Voigt fit
+    Return: amplitude, position, FWHM, background, y_calc
+    """
+    def initParam(x,y):
+        # guess starting p0eters
+        lin_bgr = np.linspace(y[0],y[-1],len(y))
+        beta = integralBreadth(x,y-lin_bgr)  
+        p0 = {'x0': x[np.argmax(y-lin_bgr)],           # position of the maximum
+                 'integral':beta*np.max(y-lin_bgr), # maximum value
+                 'FWHM':beta2FWHM(beta), #    
+                 'eta':0.95,
+                 'bgr_coeff':[0,0,0]}
+        return p0
+    
+    def parsePVPeakParam(p0):
+        """
+        Parse the parameters from a single peak pseudo-Voigt fit to a list of parameters
+        """
+        p = p0['x0'],p0['integral'],p0['FWHM'],p0['eta'],*p0['bgr_coeff']
+        return p
+
+    if p0 is None:
+        p0 = initParam(x,y)
+
+    
+    # bounds    x0, amplitude, FWHM, eta, *bgr_coeff
+    bounds = ([x[0], 0, 0, 0]+[-np.inf]*len(p0['bgr_coeff']),
+              [x[-1], np.max(y)*2, x[-1]-x[0], 1]+[np.inf]*len(p0['bgr_coeff']))
+    # fit
+    for i in range(2):
+        try:
+            popt, pcov,infodict,_,_ = sci_op.curve_fit(pVpeakCheb, 
+                                x, 
+                                y, 
+                                p0=parsePVPeakParam(p0),
+                                bounds=bounds,
+                                sigma=np.sqrt(np.abs(y)),
+                                full_output=True,
+                                )
+            #y_calc = peak(x,*popt)
+            perr = np.sqrt(np.diag(pcov))
+            break
+        except:
+            # if verbose:
+            #     print('Fit did not converge')
+            y_calc = np.full_like(y,np.nan)
+            popt = [np.nan]*len(bounds[0])
+            perr = [np.nan]*len(bounds[0])
+            p0 = initParam()
+            infodict = {'fvec':np.nan}
+
+    if verbose:
+        if np.isnan(popt[0]):
+            print('Fit did not converge')
+    
+    
+
+    p0['x0'] = popt[0]
+    p0['integral'] = popt[1]
+    p0['FWHM'] = popt[2]
+    p0['eta'] = popt[3]
+    p0['bgr_coeff'] = popt[4:]
+    p0['res'] = np.mean(infodict['fvec']**2)
+
+    p0['x0_std'] = perr[0]
+    p0['integral_std'] = perr[1]
+    p0['FWHM_std'] = perr[2]
+    p0['eta_std'] = perr[3]
+    p0['bgr_coeff_std'] = perr[4:]
+    p0['res_std'] = np.std(infodict['fvec']**2)
+
+    #return y_calc, param
+    return p0
 
 def timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -406,7 +572,7 @@ def fitLine(fun,
         if not mask_line[i]:
             continue
         if sequential and last_converged is not None:
-            fun_kwargs['p0'] = results[last_converged]
+            fun_kwargs['p0'] = copy.deepcopy(results[last_converged])
             results[i] = fun(x, y_obs, **fun_kwargs)
         else:
             results[i] = fun(x, y_obs, **fun_kwargs)
@@ -453,7 +619,7 @@ def fitMesh(fun,
     results = [[None]*mask.shape[1]]*mask.shape[0]
     n_lines = mesh.shape[0]
     fitLine_kwargs = {
-                 'versode': verbose,
+                 # 'verbose': verbose,
                  'sequential': sequential,
                  'fun_kwargs': fun_kwargs
                  }
@@ -471,9 +637,9 @@ def fitMesh(fun,
                               mesh[idx, :],
                               mask[idx, :],
                               idx,
-                              fitLine_kwargs
+                              #fitLine_kwargs
                               ),
-                        kwargs=fitLine_kwargs))
+                        kwds=fitLine_kwargs))
             if verbose:
                 print(f'{timestamp()} -- submitted jobs')
 
