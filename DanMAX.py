@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.7.0'
+version = '3.8.0'
 
 #use_dark_mode = True
 import os
@@ -59,7 +59,12 @@ try:
 except:
     print('Unable to load lib/interactive.py')
     raise
-    
+try:
+    from lib.DM_io import getAzintData
+except:
+    print('Unable to load lib/DM_io.py')
+    raise
+
 def pi(engineer=False):
     if engineer:
         return 3.
@@ -625,7 +630,7 @@ def getPixelCoords(pname,danmax_convention=True,corners=False):
             xyz[:,-1,-1] = xyz_c[:,3,-1,-1]
     return xyz
 
-def getAzintData(fname,
+def _getAzintData(fname,
                  get_meta = False,
                  xrd_range = None,
                  azi_range = None,
