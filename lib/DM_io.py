@@ -4,7 +4,9 @@ import h5py as h5
 import os
 import sys
 sys.path.append('../')
-from DanMAX import findscan, getAzintFname
+#from DanMAX import DM.findScan, DM.getAzintFname
+import DanMAX as DM
+
 
 def getAzintData_legacy(fname,
                         get_meta = False,
@@ -29,9 +31,9 @@ def getAzintData_legacy(fname,
     '''
     # get the azimuthally integrated filename from provided file name,
     if type(fname) == int:
-        fname = findscan(fname,proposal=proposal,visit=visit)
+        fname = DM.findScan(fname,proposal=proposal,visit=visit)
     if '/raw/' in fname:
-        aname = getAzintFname(fname)
+        aname = DM.getAzintFname(fname)
     else:
         aname = fname
         fname = aname.replace('process/azint','raw').replace('_pilatus_integrated.h5','.h5')
@@ -260,9 +262,9 @@ def getAzintData(fname,
     
     # get the azimuthally integrated filename from provided file name,
     if type(fname) == int:
-        fname = findscan(fname,proposal=proposal,visit=visit)
+        fname = DM.findScan(fname,proposal=proposal,visit=visit)
     if '/raw/' in fname:
-        aname = getAzintFname(fname)
+        aname = DM.getAzintFname(fname)
     else:
         aname = fname
         fname = aname.replace('process/azint','raw').replace('_pilatus_integrated.h5','.h5')
@@ -270,7 +272,7 @@ def getAzintData(fname,
     # determine the file format
     with h5.File(aname,'r') as af:
         is_nxazint = isinstance(_find_entry(af,definition='NXazint1d'),h5.Group)
-
+    
     ### NEW NeXus FORMAT ###
     if is_nxazint:
         # read the nxazint data
@@ -278,8 +280,8 @@ def getAzintData(fname,
             xrd_range = [None,None]
         if azi_range is None:
             azi_range = [None,None]
-        azint1d = Azint1d(fname,radial_range=xrd_range)
-        azint2d = Azint2d(fname,radial_range=xrd_range,azi_range=azi_range)
+        azint1d = Azint1d(aname,radial_range=xrd_range)
+        azint2d = Azint2d(aname,radial_range=xrd_range,azi_range=azi_range)
 
         # assign data to dictionary
         data_keys = {
@@ -393,9 +395,9 @@ def _find_group_from_class(group, nx_class):
             return group[key]
     if isinstance(group, h5.Dataset):
         return None
-    print(group)
+    #print(group)
     for key in group.keys():
-        print(key)
+        #print(key)
         if isinstance(group[key], h5.Group):
             return _find_group_from_class(group[key], nx_class)
     return None
