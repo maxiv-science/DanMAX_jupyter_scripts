@@ -2,7 +2,7 @@
 f"""Methods for notebooks at the DanMAX beamline
 """
 
-version = '3.8.0'
+version = '3.9.0'
 
 #use_dark_mode = True
 import os
@@ -630,6 +630,68 @@ def getPixelCoords(pname,danmax_convention=True,corners=False):
             xyz[:,-1,-1] = xyz_c[:,3,-1,-1]
     return xyz
 
+def getPilatusPxCoords(fname,corners=False):
+    """
+    Return the approximate pixel coordinates in meter of the Pilatus detector
+    for the given filename. For more accurate coordinates use a calibration
+    PONI file with the DanMAX.getPixelCoords() function.
+    
+    Parameters:
+        fname             - master .h5 file path
+        corners           - (default=False) If True, return the coordinates of the pixel corners rather then the centers
+    Return:
+        xyz - (danmax) numpy array of shape [(x,y,z),h,w] - Index [:,0,0] corresponds to the top left corner of the detector image
+        OR
+        xyz - (danmax,corners) numpy array of shape [(x,y,z),h+1,w+1] - Index [:,0,0] corresponds to the top left corner of the detector image
+    """
+    # detector dimensions
+    det_w, det_h = 1475, 1679 # px
+    if corners:
+        det_w += 1
+        det_h += 1
+    px_size = 172e-3 # mm
+
+    def rot_100(angle):
+        """return a 3x3 rotation matrix for angle in degrees"""
+        angle = - np.radians(angle)
+        c = np.cos(angle)
+        s = np.sin(angle)
+        return np.array([[1, 0, 0],
+                        [0, c, -s],
+                        [0, s, c]])
+
+    # open the file and read the large gantry positions
+    with h5.File(fname,'r') as f:
+        lg_x = f['entry/instrument/start_positioners/lg_x'][()]
+        lg_y = f['entry/instrument/start_positioners/lg_y'][()]
+        lg_z = f['entry/instrument/start_positioners/lg_z'][()]
+        lg_rx = f['entry/instrument/start_positioners/lg_rx'][()]
+
+    # create an array of pixel values 
+    x = np.arange(0.,det_w,1)[::-1]
+    y = np.arange(0.,det_h,1)[::-1]
+    # shift values so zero is at the center
+    x -= det_w/2
+    y -= det_h/2
+    # convert from px to mm
+    x *= px_size
+    y *= px_size
+    # create 2D grids (h x w)
+    xx,yy = np.meshgrid(x,y)
+
+    # create a (3 x h x w) array and set z = sdd for all pixels
+    xyz = np.full((3,*xx.shape),lg_z)
+    # populate the first two entries with the x and y values
+    # such that v has the shape ([x,y,z], h, w)
+    xyz[0] = xx + lg_x
+    xyz[1] = yy + lg_y
+
+    # rotate the detector by lg_rx
+    R = rot_100(lg_rx)
+    xyz = (xyz.T @ R).T
+
+    return xyz*1e-3
+    
 def _getAzintData(fname,
                  get_meta = False,
                  xrd_range = None,

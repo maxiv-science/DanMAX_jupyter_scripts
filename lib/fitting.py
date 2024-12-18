@@ -116,6 +116,109 @@ def linearBackground(y,n=3):
         return bgr.T[0]
     return bgr.T
 
+def estimateChebyshevBackground(x, y, num_of_bgr_coeff=3, num_of_bgr_pts=6):
+    """
+    Estimate the background using Chebyshev polynomials
+
+    Parameters
+    ----------
+    x : ndarray 1d
+        x values 
+    y : ndarray 1d or 2d
+        y values
+    num_of_bgr_coeff : int
+        number of Chebyshev coefficients (default is 3)
+    num_of_bgr_pts : int
+        number of background points (default is 6)
+
+    Returns
+    -------
+    bgr : ndarray
+        estimated background. Same shape as y
+    bgr_pts : list
+        list of indices used for background estimation
+    bgr_coeff : ndarray
+        background coefficients   
+    """
+    #create equal-sized slices for the data
+    indices = np.linspace(0, len(x), num_of_bgr_pts, dtype=int)
+    # make the first and last interval half the size of the others
+    indices[1:] -= indices[1]//2
+    indices = np.append(indices, len(x)-1)
+
+    is_1d = len(y.shape) == 1
+    y = np.atleast_2d(y).T
+    bgr_pts = [np.argmin(y[indices[i]:indices[i+1]],axis=0)[0]+indices[i] for i in range(num_of_bgr_pts)]
+    bgr_coeff = np.polynomial.chebyshev.chebfit(x[bgr_pts], y[bgr_pts], num_of_bgr_coeff-1)
+    bgr = np.polynomial.chebyshev.chebval(x, bgr_coeff)
+    if is_1d:
+        bgr = np.squeeze(bgr)
+    return bgr, bgr_pts, bgr_coeff
+
+def instrumentalBroadening(tth,t,p,phi,dE_E,c,dist):
+    """Estimate the instrumental broadening
+    From:
+    'On the resolution function for powder diffraction
+    with area detectors' Chernyshov et al. (2021)
+    DOI: 10.1107/S2053273321007506
+
+    Parameters
+    ----------
+    tth : ndarray
+        2theta values in degrees
+    t : float
+        sensor thickness in um
+    p : float
+        pixel size in um
+    phi : float
+        beam divergence in urad
+    dE_E : float
+        energy resolution
+    c : float
+        scattering diameter in um
+    dist : float
+        sample-detector distance in mm
+
+    Returns
+    -------
+    fwhm : ndarray
+        FWHM in degrees
+    """ 
+    tth = tth * np.pi / 180 # deg to rad
+    t = t * 1e-6 # um to m
+    p = p * 1e-6 # um to m
+    phi = phi * 1e-6 # urad to rad
+    c = c * 1e-6 # um to m
+    dist = dist * 1e-3 # mm to m
+    # H2, FWHM
+    A = 2*np.log(2) / dist**2 * (p**2-2*t**2-c**2)
+    B = 2*np.log(2) / dist**2 * (2*t**2 + 2*c**2)
+    C = 2*np.log(2) * phi**2
+    M = (4*np.sqrt(2*np.log(2)) * dE_E)**2 * ((1-np.cos(tth))/(1+np.cos(tth)))
+    X = np.cos(tth)
+    H2 = A*X**4 + B*X**2 + C + M
+    fwhm = np.sqrt(H2) * 180 / np.pi # deg
+    return fwhm
+
+def TCH_pV(tth,U,V,W,X,Y):
+    """
+    Thompson-Cox-Hastings pseudo-Voigt
+    Gaussian FWHM: U*tan(theta)^2 + V*tan(theta) + W
+    Lorentzian FWHM: X*tan(theta) + Y/cos(theta)
+    return pseudo Voigt FWHM
+    """
+    theta = tth*np.pi/360
+    tt = np.tan(theta)
+    ct = np.cos(theta)
+    G = np.sqrt(U*tt**2 + V*tt + W)
+    L = X*tt + Y/ct
+
+    H = (G**5 + 2.69269*G**4*L + 2.42843*G**3*L**2 \
+              + 4.47163*G**2*L**3 + 0.07842*G*L**4 + L**5)**(1/5)
+
+    #eta = 1.36603*L/H - 0.47719*(L/H)**2 + 0.11116*(L/H)**3
+    return H
+
 
 def singlePeakFit(x,y,verbose=True):
     """
