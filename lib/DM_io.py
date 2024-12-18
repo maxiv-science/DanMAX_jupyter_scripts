@@ -733,7 +733,7 @@ class Azint1d():
             self.source = Source(src)
             self.process = Process(proc)
             self.parameters = Parameters(params)
-            data = Data(d, index_range=index_range, radial_range=radial_range, azi_range=azi_range)
+            data = Data(d, index_range=index_range.copy(), radial_range=radial_range.copy(), azi_range=azi_range.copy())
             # add all public attributes of the data object to the Azint1d object
             for key in data.__dict__.keys():
                 if not key.startswith('_'):
@@ -743,5 +743,5 @@ class Azint2d(Azint1d):
     """Azint2d object containing attributes read from an NXazint2d group."""
     definition='NXazint2d'
     def __init__(self, fname,definition=definition,index_range=[None, None], radial_range=[None, None], azi_range=[None, None]):
-        super().__init__(fname,definition=definition)
+        super().__init__(fname,definition=definition, index_range=index_range, radial_range=radial_range, azi_range=azi_range)
 
